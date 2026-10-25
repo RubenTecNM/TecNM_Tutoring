@@ -1,0 +1,72 @@
+version: '3.8'
+
+networks:
+  tecnm_network:
+    driver: bridge
+    name: tecnm_tutoring_network
+
+volumes:
+  postgres_data:
+    name: tecnm_postgres_data
+  uploads_data:
+    name: tecnm_uploads_data
+
+services:
+  # Base de Datos PostgreSQL 18
+  # Base de Datos PostgreSQL 18
+  db:
+    image: postgres:18-alpine
+    container_name: tecnm-db
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-postgre_tutoring}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Admin2026!}
+    ports:
+      - "${DB_PORT:-5439}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./docs/database/init_tutoring_db.sql:/docker-entrypoint-initdb.d/init_tutoring_db.sql
+    networks:
+      - tecnm_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgre_tutoring}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Backend .NET 10 Web API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tecnm-backend
+    restart: always
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5185
+      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=${POSTGRES_DB:-postgre_tutoring};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-Admin2026!}
+      - Jwt__SecretKey=TecNM_Monclova_SuperSecretKey_2026_Secure_Token_Min_32_Bytes!
+    ports:
+      - "${BACKEND_PORT:-5185}:5185"
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - tecnm_network
+  # Frontend Vue 3 + Nginx Stable
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: tecnm-frontend
+    restart: always
+    ports:
+      - "${FRONTEND_PORT:-5085}:80"
+    depends_on:
+      - backend
+    networks:
+      - tecnm_network
