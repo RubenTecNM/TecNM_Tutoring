@@ -1,6 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import { authRoutes, authenticatedAuthRoutes } from '../../modules/auth'
+import { complianceRoutes } from '../../modules/compliance'
+import { metricsRoutes } from '../../modules/metrics'
+import { referralsRoutes } from '../../modules/referrals'
 import {
   clearSessionMarker,
   hasActiveSession,
@@ -14,7 +17,20 @@ const router = createRouter({
       path: '/',
       component: () => import('../layouts/MainLayout.vue'),
       meta: { requiresAuth: true },
-      children: authenticatedAuthRoutes,
+      children: [
+        {
+          path: '',
+          redirect: { name: 'compliance-dashboard' },
+        },
+        ...authenticatedAuthRoutes,
+        ...complianceRoutes,
+        ...referralsRoutes,
+        ...metricsRoutes,
+      ],
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      redirect: '/',
     },
   ],
   scrollBehavior(to, _from, savedPosition) {
