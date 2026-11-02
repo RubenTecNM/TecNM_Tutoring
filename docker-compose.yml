@@ -45,11 +45,11 @@ services:
     restart: always
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:5185
+      - ASPNETCORE_URLS=http://+:6090
       - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=${POSTGRES_DB:-postgre_tutoring};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-Admin2026!}
       - Jwt__SecretKey=TecNM_Monclova_SuperSecretKey_2026_Secure_Token_Min_32_Bytes!
     ports:
-      - "${BACKEND_PORT:-5185}:5185"
+      - "${BACKEND_PORT:-6090}:6090"
     volumes:
       - uploads_data:/app/uploads
     depends_on:
@@ -65,7 +65,7 @@ services:
     container_name: tecnm-frontend
     restart: always
     ports:
-      - "${FRONTEND_PORT:-5085}:80"
+      - "${FRONTEND_PORT:-6100}:80"
     depends_on:
       - backend
     networks:

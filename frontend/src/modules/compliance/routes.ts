@@ -4,7 +4,7 @@ export const complianceRoutes: RouteRecordRaw[] = [
   {
     path: '/compliance',
     name: 'compliance-dashboard',
-    component: () => import('./views/ComplianceView.vue'),
+    component: () => import('@/modules/compliance/views/ComplianceView.vue'),
     meta: {
       requiresAuth: true,
       roles: ['Docente', 'Tutor']
