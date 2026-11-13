@@ -54,7 +54,16 @@ pnpm --prefix frontend run build
 
 Verificación visual prevista: login, error genérico, carga, sesión, logout, redirección por expiración y responsive.
 
-## Mapa
+## Mapa de Módulos
+
+| Módulo | Ruta SPA | Spec | Estado |
+| :--- | :--- | :--- | :--- |
+| `auth` | `/login` · `/` | [`src/modules/auth/specs/`](./src/modules/auth/specs/) | ✅ Implementado |
+| `compliance` | `/compliance` · `/compliance/:docenteClave` | [`src/modules/compliance/specs/`](./src/modules/compliance/specs/) | 🔧 Spec lista, pendiente código |
+| `referrals` | `/referrals` | pendiente | 🕐 Sin spec |
+| `metrics` | `/metrics` | pendiente | 🕐 Sin spec |
+
+## Mapa de Archivos
 
 - [`src/app/`](./src/app/): arranque SPA y router agregador.
 - [`src/shared/api/`](./src/shared/api/): Axios base e interceptor `401`.
@@ -62,8 +71,9 @@ Verificación visual prevista: login, error genérico, carga, sesión, logout, r
 - [`src/shared/composables/`](./src/shared/composables/): estado reactivo transversal; [spec de tema](./src/shared/composables/useTheme-spec.md).
 - [`src/modules/auth/`](./src/modules/auth/): API, tipos, rutas y vistas del slice.
 - [`src/modules/auth/specs/`](./src/modules/auth/specs/): contexto frontend de Auth.
-- [Contrato raíz](../specs/auth.spec.md): única fuente de verdad compartida.
-
+- [`src/modules/compliance/`](./src/modules/compliance/): API, tipos, rutas, componentes y vistas del slice.
+- [`src/modules/compliance/specs/`](./src/modules/compliance/specs/): spec frontend de Compliance.
+- [Contrato raíz Auth](../specs/auth.spec.md): única fuente de verdad compartida.
+- [Spec BD Compliance](../backend/Modules/Compliance/specs/compliance_database_spec.md): fuente de verdad de BD para el módulo.
 - [`src/shared/components/`](./src/shared/components/): biblioteca visual reutilizable; [spec](./src/shared/components/specs/components.spec.md).
-
 - [`src/app/layouts/`](./src/app/layouts/MAINLAYOUT.md): MainLayout persistente; configuración independiente de header, sidebar, marca y navegación.
