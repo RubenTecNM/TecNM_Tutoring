@@ -1,24 +1,23 @@
 @echo off
 chcp 65001 >nul
-setlocal
+setlocal enabledelayedexpansion
 
 :MENU
 cls
 echo.
-echo  ╔══════════════════════════════════════════════════════╗
-echo  ║      TecNM Campus Monclova — Sistema de Tutorías     ║
-echo  ║               Panel de Control Docker                ║
-echo  ╠══════════════════════════════════════════════════════╣
-echo  ║                                                      ║
-echo  ║   1 ^| Encender servicios                            ║
-echo  ║   2 ^| Reiniciar servicios                           ║
-echo  ║   3 ^| Ver estatus                                   ║
-echo  ║   4 ^| Apagar servicios                              ║
-echo  ║   5 ^| Salir                                         ║
-echo  ║                                                      ║
-echo  ╚══════════════════════════════════════════════════════╝
+echo  ======================================================
+echo   TecNM Campus Monclova -- Sistema de Tutorias
+echo               Panel de Control Docker
+echo  ======================================================
 echo.
-set /p OPT="  Selecciona una opcion [1-5]: "
+echo   1 | Encender servicios
+echo   2 | Reiniciar servicios
+echo   3 | Ver estatus
+echo   4 | Apagar servicios
+echo   5 | Salir
+echo.
+set "OPT="
+set /p "OPT= Selecciona una opcion [1-5]: "
 
 if "%OPT%"=="1" goto ENCENDER
 if "%OPT%"=="2" goto REINICIAR
@@ -27,11 +26,10 @@ if "%OPT%"=="4" goto APAGAR
 if "%OPT%"=="5" goto SALIR
 
 echo.
-echo  [!] Opcion invalida. Intenta de nuevo.
+echo  [!] Opcion invalida o vacia. Intenta de nuevo.
 timeout /t 2 >nul
 goto MENU
 
-:: ─────────────────────────────────────────────────────────
 :ENCENDER
 cls
 echo.
@@ -55,7 +53,6 @@ echo.
 pause
 goto MENU
 
-:: ─────────────────────────────────────────────────────────
 :REINICIAR
 cls
 echo.
@@ -70,7 +67,6 @@ echo.
 pause
 goto MENU
 
-:: ─────────────────────────────────────────────────────────
 :ESTATUS
 cls
 echo.
@@ -78,12 +74,12 @@ echo  [*] Contenedores activos:
 echo.
 docker compose ps
 echo.
-echo  ─────────────────────────────────────────────────────
+echo  -----------------------------------------------------
 echo  [*] Healthcheck de la base de datos:
 echo.
 docker inspect tecnm-db --format "  DB status: {{.State.Health.Status}}" 2>nul || echo   [!] Contenedor tecnm-db no encontrado.
 echo.
-echo  ─────────────────────────────────────────────────────
+echo  -----------------------------------------------------
 echo  [*] Ultimas lineas de log del backend:
 echo.
 docker compose logs backend --tail 10 2>nul
@@ -91,7 +87,6 @@ echo.
 pause
 goto MENU
 
-:: ─────────────────────────────────────────────────────────
 :APAGAR
 cls
 echo.
@@ -104,7 +99,6 @@ echo.
 pause
 goto MENU
 
-:: ─────────────────────────────────────────────────────────
 :SALIR
 cls
 echo.
