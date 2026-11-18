@@ -22,7 +22,7 @@ VALUES
         '10000000-0000-4000-8000-000000000001',
         'admin',
         'admin@tecnm.local',
-        'AQAAAAIAAYagAAAAEPjbneKeORd2reFIG62af0ufOMPtwf64j0jpBznNBo3Y8K/BUoUW+IhJOm0b5iqWOg==',
+        'AQAAAAIAAYagAAAAEBNPxud6jX7QP1g34USJAlSAOJsyjHIeTAhoy4NdjwIvlomPzIgRfKtbJikHIXH/MA==',
         'Administrador Demo',
         'Admin',
         true
@@ -31,7 +31,7 @@ VALUES
         '10000000-0000-4000-8000-000000000002',
         'usuario',
         'usuario@tecnm.local',
-        'AQAAAAIAAYagAAAAECBhXWISKf+YayCz0xB8E4vyjO6chAfRLTq+f2eA4ztdtdDqA99jr+VsfZXUoKbfdQ==',
+        'AQAAAAIAAYagAAAAEBNPxud6jX7QP1g34USJAlSAOJsyjHIeTAhoy4NdjwIvlomPzIgRfKtbJikHIXH/MA==',
         'Usuario Demo',
         'User',
         true

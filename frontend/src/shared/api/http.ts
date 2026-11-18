@@ -4,8 +4,7 @@ import router from '../../app/router'
 import { clearSessionMarker } from '../utils/sessionCookie'
 
 const baseURL =
-  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ??
-  'https://localhost:7001/api'
+  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '/api'
 
 export const http = axios.create({
   baseURL,

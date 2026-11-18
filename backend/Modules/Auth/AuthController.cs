@@ -59,20 +59,20 @@ public sealed class AuthController(AuthService authService) : ControllerBase
         return NoContent();
     }
 
-    private static CookieOptions CreateCookieOptions(DateTimeOffset expiresAt, bool httpOnly) => new()
+    private CookieOptions CreateCookieOptions(DateTimeOffset expiresAt, bool httpOnly) => new()
     {
         HttpOnly = httpOnly,
-        Secure = true,
+        Secure = Request.IsHttps,
         SameSite = SameSiteMode.Lax,
         Path = "/",
         Expires = expiresAt,
         IsEssential = true
     };
 
-    private static CookieOptions CreateDeleteCookieOptions(bool httpOnly) => new()
+    private CookieOptions CreateDeleteCookieOptions(bool httpOnly) => new()
     {
         HttpOnly = httpOnly,
-        Secure = true,
+        Secure = Request.IsHttps,
         SameSite = SameSiteMode.Lax,
         Path = "/",
         IsEssential = true
