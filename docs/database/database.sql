@@ -43,4 +43,9 @@ ON CONFLICT (username) DO UPDATE SET
     role = EXCLUDED.role,
     is_active = EXCLUDED.is_active;
 
+-- Llave lógica -> tecnm_main.docentes.clave (sin FK: BD distinta). NULL = no es docente.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS docente_clave varchar(5) NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_docente_clave ON users (docente_clave);
+UPDATE users SET docente_clave = 'D0001' WHERE username = 'usuario' AND docente_clave IS NULL; -- demo
+
 COMMIT;

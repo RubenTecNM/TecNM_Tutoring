@@ -23,11 +23,12 @@ services:
     ports:
       - "${DB_PORT:-5439}:5432"
     volumes:
-      # Volumen persistente — ruta completa requerida por PostgreSQL
+      # PG 18: montar en /var/lib/postgresql (PGDATA = /var/lib/postgresql/18/docker)
       - postgres_data:/var/lib/postgresql
-      # Init scripts — se ejecutan en orden lexicográfico (solo en BD nueva)
+      # Init scripts — orden lexicográfico (solo en volumen vacío)
       - ./docs/database/01_users.sql:/docker-entrypoint-initdb.d/01_users.sql:ro
       - ./docs/database/02_tutoring.sql:/docker-entrypoint-initdb.d/02_tutoring.sql:ro
+      - ./docs/database/03_main_legacy.sql:/docker-entrypoint-initdb.d/03_main_legacy.sql:ro
     networks:
       - tecnm_network
     healthcheck:
@@ -67,7 +68,7 @@ services:
     container_name: tecnm-frontend
     restart: unless-stopped
     ports:
-      - "${FRONTEND_PORT:-6100}:80"
+      - "${FRONTEND_PORT:-6100}:6100"
     depends_on:
       - backend
     networks:

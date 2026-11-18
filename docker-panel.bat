@@ -1,23 +1,21 @@
 @echo off
-chcp 65001 >nul
-setlocal enabledelayedexpansion
+setlocal
 
 :MENU
 cls
 echo.
-echo  ======================================================
-echo   TecNM Campus Monclova -- Sistema de Tutorias
+echo ======================================================
+echo   TecNM Campus Monclova - Sistema de Tutorias
 echo               Panel de Control Docker
-echo  ======================================================
+echo ======================================================
 echo.
-echo   1 | Encender servicios
-echo   2 | Reiniciar servicios
-echo   3 | Ver estatus
-echo   4 | Apagar servicios
-echo   5 | Salir
+echo   1. Encender servicios
+echo   2. Reiniciar servicios
+echo   3. Ver estatus
+echo   4. Apagar servicios
+echo   5. Salir
 echo.
-set "OPT="
-set /p "OPT= Selecciona una opcion [1-5]: "
+set /p "OPT=Selecciona una opcion [1-5]: "
 
 if "%OPT%"=="1" goto ENCENDER
 if "%OPT%"=="2" goto REINICIAR
@@ -26,27 +24,27 @@ if "%OPT%"=="4" goto APAGAR
 if "%OPT%"=="5" goto SALIR
 
 echo.
-echo  [!] Opcion invalida o vacia. Intenta de nuevo.
+echo [!] Opcion invalida o vacia. Intenta de nuevo.
 timeout /t 2 >nul
 goto MENU
 
 :ENCENDER
 cls
 echo.
-echo  [*] Verificando archivo .env...
+echo [*] Verificando archivo .env...
 if not exist ".env" (
     echo.
-    echo  [!] Archivo .env no encontrado.
-    echo      Copia .env.example a .env y configura las variables.
+    echo [!] Archivo .env no encontrado.
+    echo     Copia .env.example a .env y configura las variables.
     echo.
     pause
     goto MENU
 )
-echo  [*] Levantando servicios...
+echo [*] Levantando servicios...
 echo.
 docker compose up -d
 echo.
-echo  [*] Estatus actual:
+echo [*] Estatus actual:
 echo.
 docker compose ps
 echo.
@@ -56,11 +54,11 @@ goto MENU
 :REINICIAR
 cls
 echo.
-echo  [*] Reiniciando servicios...
+echo [*] Reiniciando servicios...
 echo.
 docker compose restart
 echo.
-echo  [*] Estatus actual:
+echo [*] Estatus actual:
 echo.
 docker compose ps
 echo.
@@ -70,17 +68,17 @@ goto MENU
 :ESTATUS
 cls
 echo.
-echo  [*] Contenedores activos:
+echo [*] Contenedores activos:
 echo.
 docker compose ps
 echo.
-echo  -----------------------------------------------------
-echo  [*] Healthcheck de la base de datos:
+echo -----------------------------------------------------
+echo [*] Healthcheck de la base de datos:
 echo.
 docker inspect tecnm-db --format "  DB status: {{.State.Health.Status}}" 2>nul || echo   [!] Contenedor tecnm-db no encontrado.
 echo.
-echo  -----------------------------------------------------
-echo  [*] Ultimas lineas de log del backend:
+echo -----------------------------------------------------
+echo [*] Ultimas lineas de log del backend:
 echo.
 docker compose logs backend --tail 10 2>nul
 echo.
@@ -90,11 +88,11 @@ goto MENU
 :APAGAR
 cls
 echo.
-echo  [*] Apagando servicios...
+echo [*] Apagando servicios...
 echo.
 docker compose down
 echo.
-echo  [*] Servicios detenidos.
+echo [*] Servicios detenidos.
 echo.
 pause
 goto MENU
@@ -102,7 +100,7 @@ goto MENU
 :SALIR
 cls
 echo.
-echo  Hasta luego.
+echo Hasta luego.
 echo.
 timeout /t 1 >nul
 exit

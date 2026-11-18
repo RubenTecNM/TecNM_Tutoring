@@ -256,7 +256,18 @@ deleted_ip   varchar(45) NULL
 
 ---
 
-## 6. Mantenimiento y Triggers Automatizados
+## 6. Espejo de BD Principal (desarrollo) y vínculo usuario-docente
+
+- Script: `docs/database/03_main_legacy.sql` → crea BD `tecnm_main` (separada de `tecnm_tutoring`).
+- Tablas (snake_case, espejo reducido de SET_MX): `periodos`, `departamentos`, `turnos`, `estatus`, `carreras`, `plan_estudios`, `especialidades`, `asignaturas`, `docentes`, `alumnos`.
+- FK solo **dentro** de `tecnm_main`. Nunca entre BDs.
+- Excluido por privacidad: contraseñas, CURP, RFC, NSS, fotos, datos médicos/socioeconómicos.
+- Solo lectura desde API (futuro `MainDbContext`). Producción: ETL real; datos demo solo dev.
+- `users.docente_clave varchar(5) NULL` (único) → llave lógica a `docentes.clave`. `NULL` = no docente. Claim JWT pendiente de definir en `specs/auth.spec.md` antes de codificar.
+
+---
+
+## 7. Mantenimiento y Triggers Automatizados
 
 Para garantizar que el campo `updated_at` se actualice de forma transparente a nivel de motor PostgreSQL sin depender exclusivamente del ORM, se ejecuta el siguiente Trigger en todas las tablas de Tutorías:
 
