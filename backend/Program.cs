@@ -22,6 +22,13 @@ if (string.IsNullOrWhiteSpace(connectionString))
         "Falta ConnectionStrings__DefaultConnection en la configuración.");
 }
 
+var mainConnectionString = configuration.GetConnectionString("MainConnection");
+if (string.IsNullOrWhiteSpace(mainConnectionString))
+{
+    throw new InvalidOperationException(
+        "Falta ConnectionStrings__MainConnection en la configuración.");
+}
+
 var secret = configuration["Jwt:SecretKey"];
 if (string.IsNullOrWhiteSpace(secret) || Encoding.UTF8.GetByteCount(secret) < 32)
 {
@@ -54,6 +61,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<TecNMDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddDbContext<MainDbContext>(options => options.UseNpgsql(mainConnectionString));
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<HealthService>();
 builder.Services.AddScoped<PasswordHasher<User>>();

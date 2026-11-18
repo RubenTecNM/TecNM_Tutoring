@@ -119,7 +119,7 @@ src/modules/<feature>/
 | Estándar Auth | [`docs/architecture/AUTH.md`](./docs/architecture/AUTH.md) | Cookies, JWT, ciclo de vida, proveedores |
 | Spec BD (Tutorías) | [`docs/specs/especificaciones_de_base_de_datos.md`](./docs/specs/especificaciones_de_base_de_datos.md) | ERD, tablas, auditoría, llaves lógicas |
 | Plan Auth | [`docs/plans/01-auth-implementation.md`](./docs/plans/01-auth-implementation.md) | Fases 1-4 de implementación base |
-| DB SQL | [`docs/database/database.sql`](./docs/database/database.sql) | Script inicial PostgreSQL |
+| DB SQL (init Docker) | [`docs/database/`](./docs/database/) | `01_users.sql` (Auth) · `02_tutoring.sql` (Tutorías) · `03_main_legacy.sql` (espejo BD Principal, dev) |
 | AGENTS Backend | [`backend/AGENTS.md`](./backend/AGENTS.md) | Contexto específico .NET para agentes |
 | AGENTS Frontend | [`frontend/AGENTS.md`](./frontend/AGENTS.md) | Contexto específico Vue para agentes |
 

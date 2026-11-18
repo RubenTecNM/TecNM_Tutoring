@@ -50,6 +50,7 @@ services:
       - ASPNETCORE_URLS=http://+:6090
       - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=${POSTGRES_DB:-tecnm_tutoring};Username=${POSTGRES_USER:-tecnm_app};Password=${POSTGRES_PASSWORD:?Variable POSTGRES_PASSWORD requerida}
       - Jwt__SecretKey=${JWT_SECRET_KEY:?Variable JWT_SECRET_KEY requerida}
+      - ConnectionStrings__MainConnection=Host=db;Port=5432;Database=${MAIN_DB:-tecnm_main};Username=${POSTGRES_USER:-tecnm_app};Password=${POSTGRES_PASSWORD:?Variable POSTGRES_PASSWORD requerida}
     ports:
       - "${BACKEND_PORT:-6090}:6090"
     volumes:
@@ -68,7 +69,7 @@ services:
     container_name: tecnm-frontend
     restart: unless-stopped
     ports:
-      - "${FRONTEND_PORT:-6100}:6100"
+      - "${FRONTEND_PORT:-6100}:80"
     depends_on:
       - backend
     networks:

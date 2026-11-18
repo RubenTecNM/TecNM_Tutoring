@@ -23,6 +23,8 @@ public sealed class TecNMDbContext(DbContextOptions<TecNMDbContext> options) : D
         user.Property(item => item.Password).HasColumnName("password").HasMaxLength(512).IsRequired();
         user.Property(item => item.Name).HasColumnName("name").HasMaxLength(160).IsRequired();
         user.Property(item => item.Role).HasColumnName("role").HasMaxLength(16).IsRequired();
+        user.Property(item => item.DocenteClave).HasColumnName("docente_clave").HasMaxLength(5);
+        user.HasIndex(item => item.DocenteClave).IsUnique().HasDatabaseName("uq_users_docente_clave");
         user.Property(item => item.IsActive).HasColumnName("is_active").IsRequired();
         user.Property(item => item.CreatedAt)
             .HasColumnName("created_at")
