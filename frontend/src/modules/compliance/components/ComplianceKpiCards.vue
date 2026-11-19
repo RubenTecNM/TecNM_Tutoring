@@ -39,7 +39,7 @@ const computedTotal = computed(() =>
         :value="lateCount"
         :description="
           totalDelayDays !== undefined
-            ? `${totalDelayDays} días de mora acumulados`
+            ? `${totalDelayDays} días de retraso acumulados`
             : 'Entregados fuera de plazo normativo'
         "
       />
@@ -57,7 +57,7 @@ const computedTotal = computed(() =>
       <UiMetric
         label="Total entregables"
         :value="computedTotal"
-        description="Padrón auditado del periodo lectivo"
+        description="Lista de formatos del periodo lectivo"
       />
     </UiCard>
   </div>

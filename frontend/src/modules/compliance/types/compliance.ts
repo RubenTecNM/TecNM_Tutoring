@@ -28,6 +28,7 @@ export interface DocenteComplianceSummary {
   onTime: number
   late: number
   totalDelayDays: number
+  deliverables?: Deliverable[]
 }
 
 export interface ComplianceFilters {

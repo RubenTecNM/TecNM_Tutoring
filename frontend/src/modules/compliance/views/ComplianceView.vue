@@ -71,7 +71,7 @@ const docenteColumns: { key: keyof DeliverableRow & string; label: string }[] = 
   { key: 'reportType', label: 'Tipo de Formato' },
   { key: 'reportingMonth', label: 'Mes' },
   { key: 'status', label: 'Estado' },
-  { key: 'delayDays', label: 'Días de Mora' },
+  { key: 'delayDays', label: 'Días de retraso' },
   { key: 'actions', label: 'Acción' },
 ]
 
@@ -82,7 +82,7 @@ const adminColumns: { key: keyof SummaryRow & string; label: string }[] = [
   { key: 'onTime', label: 'En Tiempo' },
   { key: 'late', label: 'Con Retraso' },
   { key: 'pending', label: 'Pendientes' },
-  { key: 'totalDelayDays', label: 'Días Mora' },
+  { key: 'totalDelayDays', label: 'Días de retraso' },
   { key: 'actions', label: 'Acciones' },
 ]
 
@@ -128,35 +128,77 @@ const filteredDeliverables = computed<DeliverableRow[]>(() => {
 })
 
 const filteredSummaries = computed<SummaryRow[]>(() => {
-  return docenteSummaries.value
-    .filter((s) => {
-      if (filters.value.status === 'OnTime' && s.late > 0) return false
-      if (filters.value.status === 'Late' && s.late === 0) return false
-      if (filters.value.status === 'Pending' && s.pending === 0) return false
+  const result: SummaryRow[] = []
+
+  for (const s of docenteSummaries.value) {
+    const docDeliverables = s.deliverables ?? []
+    if (docDeliverables.length === 0) {
+      if (!filters.value.status) {
+        result.push({
+          ...s,
+          id: s.docenteClave,
+          actions: '',
+        })
+      }
+      continue
+    }
+
+    // Filtrar entregables por mes y/o tipo de formato
+    const matchingDeliverables = docDeliverables.filter((d) => {
+      if (filters.value.month && d.reportingMonth !== filters.value.month) {
+        return false
+      }
+      if (filters.value.reportType && d.reportType !== filters.value.reportType) {
+        return false
+      }
       return true
     })
-    .map((s) => ({
+
+    // Si se especificó filtro de mes o formato y no hay entregables coincidentes, omitir docente
+    if ((filters.value.month || filters.value.reportType) && matchingDeliverables.length === 0) {
+      continue
+    }
+
+    const onTime = matchingDeliverables.filter((d) => d.status === 'OnTime').length
+    const late = matchingDeliverables.filter((d) => d.status === 'Late').length
+    const pending = matchingDeliverables.filter((d) => d.status === 'Pending').length
+    const totalDelayDays = matchingDeliverables.reduce((acc, curr) => acc + curr.delayDays, 0)
+
+    // Filtro por estatus de entrega
+    if (filters.value.status === 'OnTime' && (onTime === 0 || late > 0)) continue
+    if (filters.value.status === 'Late' && late === 0) continue
+    if (filters.value.status === 'Pending' && pending === 0) continue
+
+    result.push({
       ...s,
       id: s.docenteClave,
+      totalDeliverables: matchingDeliverables.length,
+      onTime,
+      late,
+      pending,
+      totalDelayDays,
       actions: '',
-    }))
+    })
+  }
+
+  return result
 })
 
 // Métricas agregadas
 const docenteKpis = computed(() => {
-  const onTime = deliverables.value.filter((d) => d.status === 'OnTime').length
-  const late = deliverables.value.filter((d) => d.status === 'Late').length
-  const pending = deliverables.value.filter((d) => d.status === 'Pending').length
-  const delayDays = deliverables.value.reduce((acc, curr) => acc + (curr.delayDays || 0), 0)
+  const onTime = filteredDeliverables.value.filter((d) => d.status === 'OnTime').length
+  const late = filteredDeliverables.value.filter((d) => d.status === 'Late').length
+  const pending = filteredDeliverables.value.filter((d) => d.status === 'Pending').length
+  const delayDays = filteredDeliverables.value.reduce((acc, curr) => acc + (curr.delayDays || 0), 0)
   return { onTime, late, pending, delayDays }
 })
 
 const adminKpis = computed(() => {
-  const onTime = docenteSummaries.value.reduce((acc, s) => acc + s.onTime, 0)
-  const late = docenteSummaries.value.reduce((acc, s) => acc + s.late, 0)
-  const pending = docenteSummaries.value.reduce((acc, s) => acc + s.pending, 0)
-  const delayDays = docenteSummaries.value.reduce((acc, s) => acc + s.totalDelayDays, 0)
-  const total = docenteSummaries.value.reduce((acc, s) => acc + s.totalDeliverables, 0)
+  const onTime = filteredSummaries.value.reduce((acc, s) => acc + s.onTime, 0)
+  const late = filteredSummaries.value.reduce((acc, s) => acc + s.late, 0)
+  const pending = filteredSummaries.value.reduce((acc, s) => acc + s.pending, 0)
+  const delayDays = filteredSummaries.value.reduce((acc, s) => acc + s.totalDelayDays, 0)
+  const total = filteredSummaries.value.reduce((acc, s) => acc + s.totalDeliverables, 0)
   return { onTime, late, pending, delayDays, total }
 })
 
@@ -284,7 +326,7 @@ onMounted(() => {
     :title="isAdmin ? 'Supervisión de Cumplimiento Institucional' : 'Mis Entregables de Tutoría'"
     :description="
       isAdmin
-        ? 'Padrón institucional de los 54 docentes tutores y auditoría de mora de formatos.'
+        ? 'Lista general de los 54 docentes tutores y seguimiento de entregas.'
         : 'Entrega obligatoria de los 7 anexos y formatos del periodo tutorial activo.'
     "
   >
@@ -298,125 +340,131 @@ onMounted(() => {
     </UiAlert>
 
     <!-- Barra de Filtros -->
-    <ComplianceFiltersBar v-model="filters" />
+    <div class="compliance-block">
+      <ComplianceFiltersBar v-model="filters" />
+    </div>
 
     <!-- Tarjetas de Métricas Institucionales -->
-    <ComplianceKpiCards
-      v-if="isAdmin"
-      :on-time-count="adminKpis.onTime"
-      :late-count="adminKpis.late"
-      :pending-count="adminKpis.pending"
-      :total-count="adminKpis.total"
-      :total-delay-days="adminKpis.delayDays"
-    />
-    <ComplianceKpiCards
-      v-else
-      :on-time-count="docenteKpis.onTime"
-      :late-count="docenteKpis.late"
-      :pending-count="docenteKpis.pending"
-      :total-delay-days="docenteKpis.delayDays"
-    />
+    <div class="compliance-block">
+      <ComplianceKpiCards
+        v-if="isAdmin"
+        :on-time-count="adminKpis.onTime"
+        :late-count="adminKpis.late"
+        :pending-count="adminKpis.pending"
+        :total-count="adminKpis.total"
+        :total-delay-days="adminKpis.delayDays"
+      />
+      <ComplianceKpiCards
+        v-else
+        :on-time-count="docenteKpis.onTime"
+        :late-count="docenteKpis.late"
+        :pending-count="docenteKpis.pending"
+        :total-delay-days="docenteKpis.delayDays"
+      />
+    </div>
 
     <!-- ========================================== -->
     <!-- VISTA DOCENTE / TUTOR                      -->
     <!-- ========================================== -->
-    <UiCard
-      v-if="!isAdmin"
-      title="Formatos y Anexos Requeridos"
-      description="Listado normativo de los 7 entregables semestrales para el periodo seleccionado"
-      :aria-busy="isLoading"
-    >
-      <UiAlert v-if="isLoading" tone="info" title="Sincronizando formatos..." />
-      <UiTable
-        v-else
-        label="Tabla de entregables del docente"
-        :columns="docenteColumns"
-        :rows="filteredDeliverables"
+    <div v-if="!isAdmin" class="compliance-block">
+      <UiCard
+        title="Formatos y Anexos Requeridos"
+        description="Listado normativo de los 7 entregables semestrales para el periodo seleccionado"
+        :aria-busy="isLoading"
       >
-        <template #cell-reportType="{ row }">
-          <div class="format-cell">
-            <span class="format-title">{{ reportTypeLabels[row.reportType] || row.reportType }}</span>
-            <span class="format-code">{{ row.reportType }}</span>
-          </div>
-        </template>
+        <UiAlert v-if="isLoading" tone="info" title="Sincronizando formatos..." />
+        <UiTable
+          v-else
+          label="Tabla de entregables del docente"
+          :columns="docenteColumns"
+          :rows="filteredDeliverables"
+        >
+          <template #cell-reportType="{ row }">
+            <div class="format-cell">
+              <span class="format-title">{{ reportTypeLabels[row.reportType] || row.reportType }}</span>
+              <span class="format-code">{{ row.reportType }}</span>
+            </div>
+          </template>
 
-        <template #cell-reportingMonth="{ row }">
-          <span>{{ monthNames[row.reportingMonth] || `Mes ${row.reportingMonth}` }}</span>
-        </template>
+          <template #cell-reportingMonth="{ row }">
+            <span>{{ monthNames[row.reportingMonth] || `Mes ${row.reportingMonth}` }}</span>
+          </template>
 
-        <template #cell-status="{ row }">
-          <DeliverableStatusBadge :status="row.status" />
-        </template>
+          <template #cell-status="{ row }">
+            <DeliverableStatusBadge :status="row.status" />
+          </template>
 
-        <template #cell-delayDays="{ row }">
-          <span :class="{ 'mora-badge': row.delayDays > 0 }">
-            {{ row.delayDays > 0 ? `${row.delayDays} días` : '0 días' }}
-          </span>
-        </template>
+          <template #cell-delayDays="{ row }">
+            <span :class="{ 'retraso-badge': row.delayDays > 0 }">
+              {{ row.delayDays > 0 ? `${row.delayDays} días` : '0 días' }}
+            </span>
+          </template>
 
-        <template #cell-actions="{ row }">
-          <UiButton
-            v-if="row.status === 'Pending'"
-            variant="primary"
-            class="btn-sm"
-            @click="openUploadModal(row)"
-          >
-            Subir archivo
-          </UiButton>
-          <span v-else class="text-delivered">Entregado</span>
-        </template>
-      </UiTable>
-    </UiCard>
+          <template #cell-actions="{ row }">
+            <UiButton
+              v-if="row.status === 'Pending'"
+              variant="primary"
+              class="btn-sm"
+              @click="openUploadModal(row)"
+            >
+              Subir archivo
+            </UiButton>
+            <span v-else class="text-delivered">Entregado</span>
+          </template>
+        </UiTable>
+      </UiCard>
+    </div>
 
     <!-- ========================================== -->
     <!-- VISTA COORDINADOR / ADMIN                  -->
     <!-- ========================================== -->
-    <UiCard
-      v-else
-      title="Padrón General de Docentes Tutores"
-      description="Auditoría semestral consolidada de 54 docentes: mora acumulada y estatus de entrega"
-      :aria-busy="isLoading"
-    >
-      <UiAlert v-if="isLoading" tone="info" title="Cargando padrón docente..." />
-      <UiTable
-        v-else
-        label="Padrón consolidado de tutores"
-        :columns="adminColumns"
-        :rows="filteredSummaries"
+    <div v-else class="compliance-block">
+      <UiCard
+        title="Lista de Docentes Tutores"
+        description="Seguimiento semestral consolidado de 54 docentes: días de retraso y estado de entrega"
+        :aria-busy="isLoading"
       >
-        <template #cell-docenteClave="{ row }">
-          <code class="docente-clave">{{ row.docenteClave }}</code>
-        </template>
+        <UiAlert v-if="isLoading" tone="info" title="Cargando lista de docentes..." />
+        <UiTable
+          v-else
+          label="Lista consolidada de tutores"
+          :columns="adminColumns"
+          :rows="filteredSummaries"
+        >
+          <template #cell-docenteClave="{ row }">
+            <code class="docente-clave">{{ row.docenteClave }}</code>
+          </template>
 
-        <template #cell-docenteName="{ row }">
-          <span class="docente-name">{{ row.docenteName }}</span>
-        </template>
+          <template #cell-docenteName="{ row }">
+            <span class="docente-name">{{ row.docenteName }}</span>
+          </template>
 
-        <template #cell-onTime="{ row }">
-          <span class="text-ontime">{{ row.onTime }}</span>
-        </template>
+          <template #cell-onTime="{ row }">
+            <span class="text-ontime">{{ row.onTime }}</span>
+          </template>
 
-        <template #cell-late="{ row }">
-          <span :class="{ 'text-late': row.late > 0 }">{{ row.late }}</span>
-        </template>
+          <template #cell-late="{ row }">
+            <span :class="{ 'text-late': row.late > 0 }">{{ row.late }}</span>
+          </template>
 
-        <template #cell-pending="{ row }">
-          <span :class="{ 'text-pending': row.pending > 0 }">{{ row.pending }}</span>
-        </template>
+          <template #cell-pending="{ row }">
+            <span :class="{ 'text-pending': row.pending > 0 }">{{ row.pending }}</span>
+          </template>
 
-        <template #cell-totalDelayDays="{ row }">
-          <span :class="['mora-counter', { 'mora-alert': row.totalDelayDays > 0 }]">
-            {{ row.totalDelayDays > 0 ? `${row.totalDelayDays} días` : 'Sin mora' }}
-          </span>
-        </template>
+          <template #cell-totalDelayDays="{ row }">
+            <span :class="['retraso-counter', { 'retraso-alert': row.totalDelayDays > 0 }]">
+              {{ row.totalDelayDays > 0 ? `${row.totalDelayDays} días` : 'Sin retraso' }}
+            </span>
+          </template>
 
-        <template #cell-actions="{ row }">
-          <UiButton variant="secondary" class="btn-sm" @click="openDocenteDetail(row)">
-            Ver detalle
-          </UiButton>
-        </template>
-      </UiTable>
-    </UiCard>
+          <template #cell-actions="{ row }">
+            <UiButton variant="secondary" class="btn-sm" @click="openDocenteDetail(row)">
+              Ver detalle
+            </UiButton>
+          </template>
+        </UiTable>
+      </UiCard>
+    </div>
 
     <!-- ========================================== -->
     <!-- DIÁLOGO: SUBIR FORMATO (DOCENTE)           -->
@@ -489,7 +537,7 @@ onMounted(() => {
       <div v-if="selectedDocenteSummary" class="dialog-body">
         <div class="dialog-summary-bar">
           <div><strong>Clave:</strong> {{ selectedDocenteSummary.docenteClave }}</div>
-          <div><strong>Mora acumulada:</strong> {{ selectedDocenteSummary.totalDelayDays }} días</div>
+          <div><strong>Días de retraso acumulados:</strong> {{ selectedDocenteSummary.totalDelayDays }} días</div>
         </div>
 
         <UiAlert v-if="isLoadingDocenteModal" tone="info" title="Consultando entregables del docente..." />
@@ -500,7 +548,7 @@ onMounted(() => {
             { key: 'reportType', label: 'Formato' },
             { key: 'reportingMonth', label: 'Mes' },
             { key: 'status', label: 'Estado' },
-            { key: 'delayDays', label: 'Días Mora' },
+            { key: 'delayDays', label: 'Días de retraso' },
           ]"
           :rows="docenteModalDeliverables"
         >
@@ -514,7 +562,7 @@ onMounted(() => {
             <DeliverableStatusBadge :status="row.status" />
           </template>
           <template #cell-delayDays="{ row }">
-            <span :class="{ 'mora-badge': row.delayDays > 0 }">
+            <span :class="{ 'retraso-badge': row.delayDays > 0 }">
               {{ row.delayDays > 0 ? `${row.delayDays} días` : '0 días' }}
             </span>
           </template>
@@ -531,6 +579,14 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.compliance-block {
+  margin-bottom: 1.25rem;
+}
+
+.compliance-block:last-child {
+  margin-bottom: 0;
+}
+
 .format-cell {
   display: flex;
   flex-direction: column;
@@ -575,16 +631,19 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.retraso-badge,
 .mora-badge {
   color: var(--color-danger, #b91c1c);
   font-weight: 600;
 }
 
+.retraso-counter,
 .mora-counter {
   font-weight: 500;
   color: var(--color-text-secondary, #64748b);
 }
 
+.retraso-alert,
 .mora-alert {
   color: var(--color-danger, #b91c1c);
   font-weight: 600;
