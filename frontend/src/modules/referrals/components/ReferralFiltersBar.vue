@@ -1,0 +1,144 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { UiCard, UiField } from '../../../shared/components'
+import type { ReferralFilters, ReferralReason, ReferralStatus, SupportArea } from '../types/referrals'
+
+const props = withDefaults(
+  defineProps<{
+    modelValue: ReferralFilters
+    availablePeriodos?: { id: number; label: string }[]
+  }>(),
+  {
+    availablePeriodos: () => [
+      { id: 1, label: 'Ene - Jun 2026' },
+      { id: 2, label: 'Ago - Dic 2026' },
+    ],
+  },
+)
+
+const emit = defineEmits<{
+  'update:modelValue': [filters: ReferralFilters]
+}>()
+
+const periodoOptions = computed(() =>
+  props.availablePeriodos.map((p) => ({ value: String(p.id), label: p.label })),
+)
+
+const areaOptions = [
+  { value: '', label: 'Todas las áreas' },
+  { value: 'Psychology', label: 'Psicología' },
+  { value: 'Nursing', label: 'Enfermería' },
+  { value: 'Performance', label: 'Desempeño' },
+  { value: 'Tutoring', label: 'Tutorías' },
+  { value: 'SocialWork', label: 'Trabajo Social' },
+  { value: 'Academic', label: 'Académico' },
+]
+
+const reasonOptions = [
+  { value: '', label: 'Todos los motivos' },
+  { value: 'Academic', label: 'Académico' },
+  { value: 'Emotional', label: 'Emocional' },
+  { value: 'Personal', label: 'Personal' },
+  { value: 'Discipline', label: 'Indisciplina' },
+  { value: 'Health', label: 'Salud' },
+  { value: 'Socioeconomic', label: 'Socioeconómico' },
+]
+
+const statusOptions = [
+  { value: '', label: 'Todos los estados' },
+  { value: 'Sent', label: 'Enviado' },
+  { value: 'Received', label: 'Recibido' },
+  { value: 'Read', label: 'Leído' },
+  { value: 'Unread', label: 'Sin leer' },
+  { value: 'Unattended', label: 'Sin atender' },
+  { value: 'Attended', label: 'Atendido' },
+]
+
+function onPeriodoChange(val: string) {
+  emit('update:modelValue', {
+    ...props.modelValue,
+    periodoId: Number(val) || 1,
+  })
+}
+
+function onAreaChange(val: string) {
+  emit('update:modelValue', {
+    ...props.modelValue,
+    supportArea: (val as SupportArea) || undefined,
+  })
+}
+
+function onReasonChange(val: string) {
+  emit('update:modelValue', {
+    ...props.modelValue,
+    referralReason: (val as ReferralReason) || undefined,
+  })
+}
+
+function onStatusChange(val: string) {
+  emit('update:modelValue', {
+    ...props.modelValue,
+    status: (val as ReferralStatus) || undefined,
+  })
+}
+
+function onSearchChange(val: string) {
+  emit('update:modelValue', {
+    ...props.modelValue,
+    search: val || undefined,
+  })
+}
+</script>
+
+<template>
+  <UiCard title="Filtros de Canalizaciones" description="Filtrar por periodo, área de apoyo, motivo, estado o matrícula">
+    <div class="filters-grid">
+      <UiField
+        :model-value="String(modelValue.periodoId)"
+        label="Periodo escolar"
+        as="select"
+        :options="periodoOptions"
+        @update:model-value="onPeriodoChange"
+      />
+
+      <UiField
+        :model-value="modelValue.supportArea ?? ''"
+        label="Área a canalizar"
+        as="select"
+        :options="areaOptions"
+        @update:model-value="onAreaChange"
+      />
+
+      <UiField
+        :model-value="modelValue.referralReason ?? ''"
+        label="Motivo de canalización"
+        as="select"
+        :options="reasonOptions"
+        @update:model-value="onReasonChange"
+      />
+
+      <UiField
+        :model-value="modelValue.status ?? ''"
+        label="Estatus del reporte"
+        as="select"
+        :options="statusOptions"
+        @update:model-value="onStatusChange"
+      />
+
+      <UiField
+        :model-value="modelValue.search ?? ''"
+        label="Buscar estudiante"
+        placeholder="Matrícula, nombre o carrera..."
+        @update:model-value="onSearchChange"
+      />
+    </div>
+  </UiCard>
+</template>
+
+<style scoped>
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+</style>

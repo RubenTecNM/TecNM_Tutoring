@@ -1,1 +1,2 @@
-export const referralsRoutes = [];
+export { referralsRoutes } from './routes'
+export { useReferralNotifications } from './composables/useReferralNotifications'

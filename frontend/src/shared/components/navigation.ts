@@ -3,6 +3,8 @@ import type { RouteLocationRaw } from 'vue-router'
 export interface NavigationLink {
   label: string
   to: RouteLocationRaw
+  badge?: number
+  badgeTitle?: string
 }
 
 export interface NavigationGroup {
