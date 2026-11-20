@@ -24,13 +24,28 @@ export type ReferralStatus =
   | 'Attended'
   | 'Unattended'
 
+export type ReferralKpiBucket = 'all' | 'unread' | 'pending' | 'attended'
+
+export interface StudentPreview {
+  matricula: string
+  fullName: string
+  career: string
+  semester: number
+}
+
+export interface TeacherDirectoryItem {
+  clave: string
+  fullName: string
+  department?: string
+}
+
 export interface Referral {
   id: string
   periodoId: number
   matricula: string
-  studentName?: string
+  studentName: string
   studentCareer: string
-  studentSemester?: number
+  studentSemester: number
   tutorClave: string
   tutorName?: string
   detectionSource: DetectionSource
@@ -40,6 +55,7 @@ export interface Referral {
   observations?: string
   coordinatorNotes?: string
   status: ReferralStatus
+  isDeleted?: boolean
   createdAt: string
   updatedAt?: string
 }
@@ -47,7 +63,21 @@ export interface Referral {
 export interface CreateReferralRequest {
   periodoId: number
   matricula: string
+  studentName?: string
   studentCareer: string
+  studentSemester?: number
+  detectionSource: DetectionSource
+  detectedByTeacherName?: string
+  supportArea: SupportArea
+  referralReason: ReferralReason
+  observations?: string
+}
+
+export interface UpdateReferralRequest {
+  matricula: string
+  studentName?: string
+  studentCareer: string
+  studentSemester?: number
   detectionSource: DetectionSource
   detectedByTeacherName?: string
   supportArea: SupportArea
@@ -65,5 +95,6 @@ export interface ReferralFilters {
   supportArea?: SupportArea
   referralReason?: ReferralReason
   status?: ReferralStatus
+  kpiBucket?: ReferralKpiBucket
   search?: string
 }

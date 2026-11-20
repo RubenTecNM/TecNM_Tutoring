@@ -7,12 +7,14 @@ const props = withDefaults(
   defineProps<{
     modelValue: ReferralFilters
     availablePeriodos?: { id: number; label: string }[]
+    isAdmin?: boolean
   }>(),
   {
     availablePeriodos: () => [
       { id: 1, label: 'Ene - Jun 2026' },
       { id: 2, label: 'Ago - Dic 2026' },
     ],
+    isAdmin: false,
   },
 )
 
@@ -79,6 +81,7 @@ function onStatusChange(val: string) {
   emit('update:modelValue', {
     ...props.modelValue,
     status: (val as ReferralStatus) || undefined,
+    kpiBucket: 'all',
   })
 }
 
@@ -87,6 +90,7 @@ const hasActiveFilters = computed(() =>
     props.modelValue.supportArea ||
       props.modelValue.referralReason ||
       props.modelValue.status ||
+      (props.modelValue.kpiBucket && props.modelValue.kpiBucket !== 'all') ||
       props.modelValue.search?.trim(),
   ),
 )
@@ -104,13 +108,21 @@ function clearFilters() {
     supportArea: undefined,
     referralReason: undefined,
     status: undefined,
+    kpiBucket: 'all',
     search: undefined,
   })
 }
 </script>
 
 <template>
-  <UiCard title="Filtros de Canalizaciones" description="Filtrar por periodo, área de apoyo, motivo, estado o matrícula">
+  <UiCard
+    title="Filtros de Canalizaciones"
+    :description="
+      isAdmin
+        ? 'Filtrar por periodo, área, motivo, estatus, alumno o docente tutor'
+        : 'Filtrar por periodo, área de apoyo, motivo, estatus o matrícula'
+    "
+  >
     <div class="filters-grid">
       <UiField
         :model-value="String(modelValue.periodoId)"
@@ -146,8 +158,8 @@ function clearFilters() {
 
       <UiField
         :model-value="modelValue.search ?? ''"
-        label="Buscar estudiante"
-        placeholder="Matrícula, nombre o carrera..."
+        :label="isAdmin ? 'Buscar alumno o tutor' : 'Buscar estudiante'"
+        :placeholder="isAdmin ? 'Matrícula, alumno, carrera o tutor...' : 'Matrícula, nombre o carrera...'"
         @update:model-value="onSearchChange"
       />
     </div>

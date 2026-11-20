@@ -18,10 +18,6 @@ export function useReferralNotifications() {
     }
   }
 
-  function syncUnreadCountFromList(list: Referral[]): void {
-    unreadReferralsCount.value = list.filter(isNewReferral).length
-  }
-
   function clearUnreadCount(): void {
     unreadReferralsCount.value = 0
   }
@@ -29,7 +25,6 @@ export function useReferralNotifications() {
   return {
     unreadReferralsCount,
     refreshUnreadCount,
-    syncUnreadCountFromList,
     clearUnreadCount,
   }
 }

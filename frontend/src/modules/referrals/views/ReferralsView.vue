@@ -25,7 +25,9 @@ import type {
   CreateReferralRequest,
   Referral,
   ReferralFilters,
+  ReferralKpiBucket,
   ReferralStatus,
+  UpdateReferralRequest,
 } from '../types/referrals'
 
 interface ReferralRow extends Referral {
@@ -38,15 +40,24 @@ const isAdmin = computed(() => currentUser.value?.role === 'Admin')
 const { refreshUnreadCount } = useReferralNotifications()
 
 const isLoading = ref(true)
-const isCreatingReferral = ref(false)
+const isSavingReferral = ref(false)
 const isUpdatingStatus = ref(false)
+const isCancelling = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 
+// Modal de creación / edición (Tutor)
 const isCreateModalOpen = ref(false)
+const editingReferral = ref<Referral | null>(null)
+
+// Modal de confirmación de cancelación (Tutor)
+const isCancelModalOpen = ref(false)
+const referralToCancel = ref<Referral | null>(null)
+
+// Modal de detalle / gestión (Coordinación y Tutor)
 const isDetailModalOpen = ref(false)
 const selectedReferral = ref<Referral | null>(null)
-const editStatus = ref<ReferralStatus>('Received')
+const editStatus = ref<ReferralStatus>('Read')
 const editCoordinatorNotes = ref('')
 
 const filters = ref<ReferralFilters>({
@@ -54,6 +65,7 @@ const filters = ref<ReferralFilters>({
   supportArea: undefined,
   referralReason: undefined,
   status: undefined,
+  kpiBucket: 'all',
   search: undefined,
 })
 
@@ -105,43 +117,82 @@ const roleScopedReferrals = computed<Referral[]>(() => {
   return allReferrals.value.filter((r) => resolveTutorClave(r.tutorClave) === myClave)
 })
 
-// Filtros reactivos + ordenamiento obligatorio de fecha más reciente a más antigua
+function normalizeSearch(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+}
+
+// Base filtrada por criterios de barra (antes de aplicar KPI bucket, para mantener contadores estables)
+const baseFilteredReferrals = computed<Referral[]>(() => {
+  return roleScopedReferrals.value.filter((item) => {
+    if (filters.value.supportArea && item.supportArea !== filters.value.supportArea) {
+      return false
+    }
+    if (filters.value.referralReason && item.referralReason !== filters.value.referralReason) {
+      return false
+    }
+    if (filters.value.status && item.status !== filters.value.status) {
+      return false
+    }
+    if (filters.value.search) {
+      const query = normalizeSearch(filters.value.search)
+      if (!query) return true
+      const matchMatricula = normalizeSearch(item.matricula).includes(query)
+      const matchName = normalizeSearch(item.studentName).includes(query)
+      const matchCareer = normalizeSearch(item.studentCareer).includes(query)
+      const matchTutorName =
+        isAdmin.value && normalizeSearch(item.tutorName ?? '').includes(query)
+      const matchTutorClave = isAdmin.value && normalizeSearch(item.tutorClave).includes(query)
+      if (!matchMatricula && !matchName && !matchCareer && !matchTutorName && !matchTutorClave) {
+        return false
+      }
+    }
+    return true
+  })
+})
+
+// Filtros reactivos + KPI bucket + ordenamiento de fecha más reciente a más antigua
 const filteredReferrals = computed<ReferralRow[]>(() => {
-  return roleScopedReferrals.value
+  const bucket = filters.value.kpiBucket ?? 'all'
+  return baseFilteredReferrals.value
     .filter((item) => {
-      if (filters.value.supportArea && item.supportArea !== filters.value.supportArea) {
-        return false
+      if (bucket === 'unread') return isNewReferral(item)
+      if (bucket === 'pending') {
+        return item.status === 'Received' || item.status === 'Read' || item.status === 'Unattended'
       }
-      if (filters.value.referralReason && item.referralReason !== filters.value.referralReason) {
-        return false
-      }
-      if (filters.value.status && item.status !== filters.value.status) {
-        return false
-      }
-      if (filters.value.search) {
-        const query = filters.value.search.toLowerCase()
-        const matchMatricula = item.matricula.toLowerCase().includes(query)
-        const matchName = item.studentName?.toLowerCase().includes(query) ?? false
-        const matchCareer = item.studentCareer.toLowerCase().includes(query)
-        if (!matchMatricula && !matchName && !matchCareer) return false
-      }
+      if (bucket === 'attended') return item.status === 'Attended'
       return true
     })
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .map((item) => ({ ...item, actions: '' }))
 })
 
-// Métricas KPI reactivas
+// Métricas KPI reactivas (sobre los filtros base)
 const kpis = computed(() => {
-  const list = filteredReferrals.value
+  const list = baseFilteredReferrals.value
   const total = list.length
-  const unread = list.filter((r) => r.status === 'Unread' || r.status === 'Sent').length
+  const unread = list.filter(isNewReferral).length
   const attended = list.filter((r) => r.status === 'Attended').length
   const pending = list.filter(
     (r) => r.status === 'Received' || r.status === 'Read' || r.status === 'Unattended',
   ).length
   return { total, unread, pending, attended }
 })
+
+function handleKpiSelect(bucket: ReferralKpiBucket): void {
+  filters.value = {
+    ...filters.value,
+    status: undefined,
+    kpiBucket: bucket,
+  }
+}
+
+function canTutorModify(referral: Referral): boolean {
+  return !isAdmin.value && isNewReferral(referral)
+}
 
 async function loadReferrals(): Promise<void> {
   isLoading.value = true
@@ -176,10 +227,20 @@ watch(
   },
 )
 
-async function handleCreateReferral(payload: CreateReferralRequest): Promise<void> {
-  if (isCreatingReferral.value) return
+function openNewReferralModal(): void {
+  editingReferral.value = null
+  isCreateModalOpen.value = true
+}
 
-  isCreatingReferral.value = true
+function openEditReferralModal(referral: Referral): void {
+  editingReferral.value = referral
+  isCreateModalOpen.value = true
+}
+
+async function handleCreateReferral(payload: CreateReferralRequest): Promise<void> {
+  if (isSavingReferral.value) return
+
+  isSavingReferral.value = true
   errorMessage.value = ''
 
   try {
@@ -194,20 +255,97 @@ async function handleCreateReferral(payload: CreateReferralRequest): Promise<voi
       await refreshUnreadCount()
     }
     isCreateModalOpen.value = false
-    successMessage.value = `Canalización enviada a coordinación para la matrícula ${payload.matricula}.`
+    successMessage.value = `Canalización enviada a coordinación para ${newReferral.studentName} (${newReferral.matricula}).`
   } catch {
     errorMessage.value = 'Error al registrar la canalización.'
   } finally {
-    isCreatingReferral.value = false
+    isSavingReferral.value = false
   }
 }
 
-function openDetailModal(referral: Referral): void {
+async function handleUpdateReferral(
+  referralId: string,
+  payload: UpdateReferralRequest,
+): Promise<void> {
+  if (isSavingReferral.value) return
+
+  isSavingReferral.value = true
+  errorMessage.value = ''
+
+  try {
+    const updated = await referralsApi.updateReferral(referralId, payload)
+    if (updated) {
+      const idx = allReferrals.value.findIndex((r) => r.id === referralId)
+      if (idx !== -1) {
+        allReferrals.value[idx] = updated
+      }
+    }
+    isCreateModalOpen.value = false
+    editingReferral.value = null
+    successMessage.value = 'La canalización fue actualizada correctamente.'
+  } catch {
+    errorMessage.value = 'No fue posible actualizar la canalización.'
+  } finally {
+    isSavingReferral.value = false
+  }
+}
+
+function openCancelConfirm(referral: Referral): void {
+  referralToCancel.value = referral
+  isCancelModalOpen.value = true
+}
+
+async function confirmCancelReferral(): Promise<void> {
+  if (!referralToCancel.value || isCancelling.value) return
+
+  isCancelling.value = true
+  errorMessage.value = ''
+
+  try {
+    const idToCancel = referralToCancel.value.id
+    await referralsApi.cancelReferral(idToCancel)
+    allReferrals.value = allReferrals.value.filter((r) => r.id !== idToCancel)
+    isCancelModalOpen.value = false
+    referralToCancel.value = null
+    successMessage.value = 'La canalización fue cancelada correctamente.'
+  } catch {
+    errorMessage.value = 'No fue posible cancelar la canalización.'
+  } finally {
+    isCancelling.value = false
+  }
+}
+
+async function openDetailModal(referral: Referral): Promise<void> {
   selectedReferral.value = referral
-  // Al abrir un reporte nuevo como coordinadora, sugerir estatus "Leído" por defecto
-  editStatus.value = isAdmin.value && isNewReferral(referral) ? 'Read' : referral.status
+  editStatus.value = referral.status
   editCoordinatorNotes.value = referral.coordinatorNotes ?? ''
   isDetailModalOpen.value = true
+
+  // Lectura automática al abrir un reporte nuevo en Coordinación
+  if (isAdmin.value && isNewReferral(referral)) {
+    try {
+      await referralsApi.updateReferralStatus(referral.id, {
+        status: 'Read',
+        coordinatorNotes: referral.coordinatorNotes,
+      })
+      const target = allReferrals.value.find((r) => r.id === referral.id)
+      if (target) {
+        target.status = 'Read'
+        target.updatedAt = new Date().toISOString()
+      }
+      if (selectedReferral.value?.id === referral.id) {
+        selectedReferral.value = {
+          ...selectedReferral.value,
+          status: 'Read',
+          updatedAt: target?.updatedAt,
+        }
+        editStatus.value = 'Read'
+      }
+      await refreshUnreadCount()
+    } catch {
+      // Si falla el marcado silencioso, se permite actualizar manualmente
+    }
+  }
 }
 
 function closeDetailModal(): void {
@@ -277,7 +415,7 @@ onMounted(() => {
     "
   >
     <template #actions>
-      <UiButton v-if="!isAdmin" variant="primary" @click="isCreateModalOpen = true">
+      <UiButton v-if="!isAdmin" variant="primary" @click="openNewReferralModal">
         + Nueva Canalización
       </UiButton>
     </template>
@@ -299,16 +437,18 @@ onMounted(() => {
 
     <!-- Bloque 1: Filtros de Búsqueda -->
     <div class="referrals-block">
-      <ReferralFiltersBar v-model="filters" />
+      <ReferralFiltersBar v-model="filters" :is-admin="isAdmin" />
     </div>
 
-    <!-- Bloque 2: Tarjetas de Resumen KPI -->
+    <!-- Bloque 2: Tarjetas de Resumen KPI Interactivas -->
     <div class="referrals-block">
       <ReferralKpiCards
         :total-count="kpis.total"
         :unread-count="kpis.unread"
         :pending-count="kpis.pending"
         :attended-count="kpis.attended"
+        :active-bucket="filters.kpiBucket ?? 'all'"
+        @select="handleKpiSelect"
       />
     </div>
 
@@ -340,12 +480,14 @@ onMounted(() => {
           <template #cell-matricula="{ row }">
             <div class="student-cell">
               <div class="student-title-row">
-                <span class="student-name">{{ row.studentName || `Matrícula ${row.matricula}` }}</span>
+                <span class="student-name">{{ row.studentName }}</span>
                 <span v-if="isAdmin && isNewReferral(row)" class="new-pill">Nuevo</span>
+                <span v-if="!isAdmin && row.coordinatorNotes" class="response-pill">Con respuesta</span>
               </div>
               <div class="student-meta">
-                <code class="student-id">{{ row.matricula }}</code>
                 <span class="student-career">{{ row.studentCareer }}</span>
+                <span class="meta-dot" aria-hidden="true">·</span>
+                <code class="student-id">{{ row.matricula }}</code>
               </div>
             </div>
           </template>
@@ -383,49 +525,103 @@ onMounted(() => {
           </template>
 
           <template #cell-actions="{ row }">
-            <UiButton
-              :variant="isAdmin ? 'primary' : 'secondary'"
-              class="btn-sm"
-              @click="openDetailModal(row)"
-            >
-              {{ isAdmin ? 'Atender / Editar' : 'Ver estatus' }}
-            </UiButton>
+            <div class="row-actions">
+              <UiButton
+                :variant="isAdmin ? 'primary' : 'secondary'"
+                class="btn-sm"
+                @click="openDetailModal(row)"
+              >
+                {{ isAdmin ? 'Atender / Editar' : 'Ver estatus' }}
+              </UiButton>
+              <UiButton
+                v-if="canTutorModify(row)"
+                variant="secondary"
+                class="btn-sm"
+                @click="openEditReferralModal(row)"
+              >
+                Editar
+              </UiButton>
+              <UiButton
+                v-if="canTutorModify(row)"
+                variant="danger"
+                class="btn-sm"
+                @click="openCancelConfirm(row)"
+              >
+                Cancelar
+              </UiButton>
+            </div>
           </template>
         </UiTable>
       </UiCard>
     </div>
 
-    <!-- Modal de Creación (Tutor) -->
+    <!-- Modal de Creación / Edición (Tutor) -->
     <CreateReferralModal
       v-model="isCreateModalOpen"
       :periodo-id="filters.periodoId"
-      :submitting="isCreatingReferral"
+      :submitting="isSavingReferral"
+      :existing-referrals="roleScopedReferrals"
+      :editing-referral="editingReferral"
       @created="handleCreateReferral"
+      @updated="handleUpdateReferral"
     />
+
+    <!-- Modal de Confirmación de Cancelación (Tutor) -->
+    <UiDialog
+      v-model="isCancelModalOpen"
+      title="Cancelar Canalización"
+      class="confirm-modal"
+    >
+      <div v-if="referralToCancel" class="case-detail-body">
+        <UiText>
+          ¿Deseas cancelar la canalización enviada para
+          <strong>{{ referralToCancel.studentName }}</strong>
+          (<code>{{ referralToCancel.matricula }}</code>)?
+        </UiText>
+        <div class="dialog-actions">
+          <UiButton variant="secondary" :disabled="isCancelling" @click="isCancelModalOpen = false">
+            Conservar
+          </UiButton>
+          <UiButton variant="danger" :loading="isCancelling" @click="confirmCancelReferral">
+            Sí, cancelar envío
+          </UiButton>
+        </div>
+      </div>
+    </UiDialog>
 
     <!-- Modal de Detalle / Gestión de Canalización -->
     <UiDialog
       v-model="isDetailModalOpen"
-      :title="selectedReferral ? `Canalización: ${selectedReferral.matricula}` : 'Detalle de Canalización'"
+      :title="selectedReferral ? `Expediente de Canalización · ${selectedReferral.matricula}` : 'Detalle de Canalización'"
       class="detail-modal"
     >
       <div v-if="selectedReferral" class="case-detail-body">
-        <div class="case-header-grid">
-          <div>
-            <span class="meta-label">Matrícula del alumno:</span>
-            <strong>{{ selectedReferral.matricula }}</strong>
-          </div>
-          <div>
-            <span class="meta-label">Carrera:</span>
-            <span>{{ selectedReferral.studentCareer }}</span>
-          </div>
-          <div>
-            <span class="meta-label">Área a canalizar:</span>
-            <ReferralSupportAreaBadge :area="selectedReferral.supportArea" />
-          </div>
-          <div>
-            <span class="meta-label">Estatus actual:</span>
+        <!-- Plantilla completa de datos del alumno -->
+        <div class="student-dossier-card">
+          <div class="dossier-top">
+            <div>
+              <span class="meta-label">Nombre completo del alumno</span>
+              <div class="dossier-name">{{ selectedReferral.studentName }}</div>
+            </div>
             <ReferralStatusBadge :status="selectedReferral.status" />
+          </div>
+          <div class="dossier-grid">
+            <div>
+              <span class="meta-label">Matrícula</span>
+              <code class="dossier-matricula">{{ selectedReferral.matricula }}</code>
+            </div>
+            <div>
+              <span class="meta-label">Semestre</span>
+              <strong>{{ selectedReferral.studentSemester }}° Semestre</strong>
+            </div>
+            <div class="dossier-career">
+              <span class="meta-label">Carrera</span>
+              <strong>{{ selectedReferral.studentCareer }}</strong>
+            </div>
+            <div>
+              <span class="meta-label">Área a canalizar</span>
+              <ReferralSupportAreaBadge :area="selectedReferral.supportArea" />
+            </div>
           </div>
         </div>
 
@@ -517,17 +713,18 @@ onMounted(() => {
 .student-cell {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: 0.1875rem;
 }
 
 .student-title-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 
 .student-name {
-  font-weight: 500;
+  font-weight: 600;
   color: var(--color-text-primary, #0f172a);
 }
 
@@ -542,23 +739,39 @@ onMounted(() => {
   border: 1px solid var(--color-danger-border, #fecaca);
 }
 
+.response-pill {
+  display: inline-block;
+  padding: 0.0625rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background-color: var(--color-info-badge, #e0f2fe);
+  color: var(--color-info-text, #075985);
+  border: 1px solid var(--color-info-border, #bfdbfe);
+}
+
 .student-meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.375rem;
+}
+
+.meta-dot {
+  color: var(--color-text-muted, #94a3b8);
 }
 
 .student-id {
   font-family: monospace;
   font-size: 0.75rem;
-  background-color: #f1f5f9;
-  padding: 0.0625rem 0.25rem;
+  font-weight: 600;
+  background-color: var(--color-gray-100, #f1f5f9);
+  padding: 0.0625rem 0.3rem;
   border-radius: 4px;
 }
 
 .student-career {
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   color: var(--color-text-secondary, #64748b);
 }
 
@@ -591,14 +804,25 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+.row-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
 .btn-sm {
   padding: 0.25rem 0.625rem;
   font-size: 0.8125rem;
 }
 
-/* Diálogo de Caso */
+/* Diálogos */
+.confirm-modal {
+  max-width: 460px;
+}
+
 .detail-modal {
-  max-width: 640px;
+  max-width: 660px;
 }
 
 .case-detail-body {
@@ -607,21 +831,52 @@ onMounted(() => {
   gap: 1.125rem;
 }
 
-.case-header-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
+.student-dossier-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
   background-color: var(--color-bg-light, #f8fafc);
-  padding: 0.875rem 1rem;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-left: 4px solid var(--color-primary, #1b396a);
   border-radius: 8px;
+  padding: 1rem;
+}
+
+.dossier-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.dossier-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text-primary, #0f172a);
+}
+
+.dossier-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
   font-size: 0.875rem;
+}
+
+.dossier-matricula {
+  font-family: monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  background-color: var(--color-surface-white, #ffffff);
+  padding: 0.125rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid var(--color-border, #e2e8f0);
 }
 
 .meta-label {
   display: block;
-  font-size: 0.75rem;
+  font-size: 0.73rem;
   color: var(--color-text-secondary, #64748b);
-  margin-bottom: 0.125rem;
+  margin-bottom: 0.15rem;
 }
 
 .case-info-section {
