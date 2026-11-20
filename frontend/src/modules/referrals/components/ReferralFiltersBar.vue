@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { UiCard, UiField } from '../../../shared/components'
+import { UiButton, UiCard, UiField } from '../../../shared/components'
 import type { ReferralFilters, ReferralReason, ReferralStatus, SupportArea } from '../types/referrals'
 
 const props = withDefaults(
@@ -82,10 +82,29 @@ function onStatusChange(val: string) {
   })
 }
 
+const hasActiveFilters = computed(() =>
+  Boolean(
+    props.modelValue.supportArea ||
+      props.modelValue.referralReason ||
+      props.modelValue.status ||
+      props.modelValue.search?.trim(),
+  ),
+)
+
 function onSearchChange(val: string) {
   emit('update:modelValue', {
     ...props.modelValue,
     search: val || undefined,
+  })
+}
+
+function clearFilters() {
+  emit('update:modelValue', {
+    periodoId: props.modelValue.periodoId,
+    supportArea: undefined,
+    referralReason: undefined,
+    status: undefined,
+    search: undefined,
   })
 }
 </script>
@@ -132,6 +151,12 @@ function onSearchChange(val: string) {
         @update:model-value="onSearchChange"
       />
     </div>
+
+    <div v-if="hasActiveFilters" class="filters-footer">
+      <UiButton variant="secondary" class="btn-clear" @click="clearFilters">
+        Limpiar filtros
+      </UiButton>
+    </div>
   </UiCard>
 </template>
 
@@ -140,5 +165,16 @@ function onSearchChange(val: string) {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1rem;
+}
+
+.filters-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.875rem;
+}
+
+.btn-clear {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
 }
 </style>

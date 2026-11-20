@@ -6,25 +6,17 @@ import type {
   UpdateReferralStatusRequest,
 } from '../types/referrals'
 
-const MOCK_STORAGE_KEY = 'tecnm_referrals_mock_v2'
+const MOCK_STORAGE_KEY = 'tecnm_referrals_mock_v4'
 
+export function resolveTutorClave(username?: string): string {
+  if (!username) return ''
+  if (username === 'usuario') return 'D0001'
+  if (username === 'usuario2') return 'D0002'
+  return username
+}
+
+// Sin datos demo para usuario (D0001) ni usuario2 (D0002): inician en blanco para pruebas limpias.
 const DEFAULT_MOCK_REFERRALS: Referral[] = [
-  {
-    id: 'ref-005',
-    periodoId: 1,
-    matricula: '23050077',
-    studentName: 'Valeria Guadalupe Pérez Ramos',
-    studentCareer: 'Ingeniería en Sistemas Computacionales',
-    studentSemester: 1,
-    tutorClave: 'usuario',
-    tutorName: 'Ing. Carlos Alberto Mendoza Gómez',
-    detectionSource: 'Tutor',
-    supportArea: 'Psychology',
-    referralReason: 'Emotional',
-    observations: 'Proceso de duelo familiar que impacta asistencia y entrega de actividades.',
-    status: 'Unread',
-    createdAt: '2026-03-04T15:20:00Z',
-  },
   {
     id: 'ref-006',
     periodoId: 1,
@@ -41,43 +33,6 @@ const DEFAULT_MOCK_REFERRALS: Referral[] = [
     observations: 'Descenso marcado en el rendimiento de prácticas de laboratorio durante las últimas tres semanas.',
     status: 'Sent',
     createdAt: '2026-03-03T11:10:00Z',
-  },
-  {
-    id: 'ref-002',
-    periodoId: 1,
-    matricula: '20050844',
-    studentName: 'Mateo Alejandro Garza Silva',
-    studentCareer: 'Ingeniería Industrial',
-    studentSemester: 6,
-    tutorClave: 'usuario',
-    tutorName: 'Ing. Carlos Alberto Mendoza Gómez',
-    detectionSource: 'Docente',
-    detectedByTeacherName: 'Ing. Alejandro Ruiz Lozano',
-    supportArea: 'Academic',
-    referralReason: 'Academic',
-    observations: 'Riesgo inminente de reprobación en Cálculo Integral. Requiere asesoría académica niveladora.',
-    coordinatorNotes: 'Canalizado a sesión de asesorías con departamento de Ciencias Básicas.',
-    status: 'Received',
-    createdAt: '2026-02-22T12:15:00Z',
-    updatedAt: '2026-02-23T09:00:00Z',
-  },
-  {
-    id: 'ref-001',
-    periodoId: 1,
-    matricula: '21050012',
-    studentName: 'Ana Sofía Rodríguez Fuentes',
-    studentCareer: 'Ingeniería en Sistemas Computacionales',
-    studentSemester: 4,
-    tutorClave: 'usuario',
-    tutorName: 'Ing. Carlos Alberto Mendoza Gómez',
-    detectionSource: 'Tutor',
-    supportArea: 'Psychology',
-    referralReason: 'Emotional',
-    observations: 'Estudiante presenta ansiedad recurrente y falta de concentración en exámenes parciales.',
-    coordinatorNotes: 'Reporte revisado, pendiente agendar primera sesión con Psicología.',
-    status: 'Unattended',
-    createdAt: '2026-02-18T10:30:00Z',
-    updatedAt: '2026-02-19T10:00:00Z',
   },
   {
     id: 'ref-004',
@@ -97,24 +52,6 @@ const DEFAULT_MOCK_REFERRALS: Referral[] = [
     status: 'Attended',
     createdAt: '2026-02-14T11:45:00Z',
     updatedAt: '2026-02-20T16:00:00Z',
-  },
-  {
-    id: 'ref-003',
-    periodoId: 1,
-    matricula: '22050189',
-    studentName: 'Mariana Lizeth Cantú Ortiz',
-    studentCareer: 'Ingeniería en Gestión Empresarial',
-    studentSemester: 2,
-    tutorClave: 'usuario',
-    tutorName: 'Ing. Carlos Alberto Mendoza Gómez',
-    detectionSource: 'Tutor',
-    supportArea: 'SocialWork',
-    referralReason: 'Socioeconomic',
-    observations: 'Dificultad de traslado y problemas socioeconómicos que amenazan con baja temporal.',
-    coordinatorNotes: 'Se vinculó con beca de transporte y apoyo de Trabajo Social.',
-    status: 'Attended',
-    createdAt: '2026-02-10T09:00:00Z',
-    updatedAt: '2026-02-25T14:20:00Z',
   },
 ]
 
@@ -141,20 +78,27 @@ function saveMockReferrals(items: Referral[]): void {
 }
 
 export const referralsApi = {
-  async getReferrals(filters?: Partial<ReferralFilters>): Promise<Referral[]> {
+  async getReferrals(
+    filters?: Partial<ReferralFilters> & { tutorClave?: string },
+  ): Promise<Referral[]> {
     try {
       const params = new URLSearchParams()
       if (filters?.periodoId) params.append('periodoId', String(filters.periodoId))
       if (filters?.supportArea) params.append('supportArea', filters.supportArea)
       if (filters?.referralReason) params.append('referralReason', filters.referralReason)
       if (filters?.status) params.append('status', filters.status)
+      if (filters?.tutorClave) params.append('tutorClave', filters.tutorClave)
 
       const { data } = await http.get<Referral[]>(`/referrals?${params.toString()}`)
       return data
     } catch {
-      const mock = loadMockReferrals()
+      let mock = loadMockReferrals()
       if (filters?.periodoId) {
-        return mock.filter((r) => r.periodoId === filters.periodoId)
+        mock = mock.filter((r) => r.periodoId === filters.periodoId)
+      }
+      if (filters?.tutorClave) {
+        const normalized = resolveTutorClave(filters.tutorClave)
+        mock = mock.filter((r) => r.tutorClave === normalized)
       }
       return mock
     }
@@ -168,13 +112,14 @@ export const referralsApi = {
       const { data } = await http.post<Referral>('/referrals', payload)
       return data
     } catch {
+      const tutorClave = resolveTutorClave(currentUser?.username) || 'D0001'
       const created: Referral = {
         id: `ref-${Date.now()}`,
         periodoId: payload.periodoId,
         matricula: payload.matricula,
         studentName: `Estudiante ${payload.matricula}`,
         studentCareer: payload.studentCareer,
-        tutorClave: currentUser?.username || 'usuario',
+        tutorClave,
         tutorName: currentUser?.name || 'Docente Tutor',
         detectionSource: payload.detectionSource,
         detectedByTeacherName:

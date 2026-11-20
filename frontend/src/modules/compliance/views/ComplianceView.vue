@@ -129,8 +129,15 @@ const filteredDeliverables = computed<DeliverableRow[]>(() => {
 
 const filteredSummaries = computed<SummaryRow[]>(() => {
   const result: SummaryRow[] = []
+  const searchQuery = filters.value.search?.trim().toLowerCase()
 
   for (const s of docenteSummaries.value) {
+    if (searchQuery) {
+      const matchClave = s.docenteClave.toLowerCase().includes(searchQuery)
+      const matchName = s.docenteName.toLowerCase().includes(searchQuery)
+      if (!matchClave && !matchName) continue
+    }
+
     const docDeliverables = s.deliverables ?? []
     if (docDeliverables.length === 0) {
       if (!filters.value.status) {
@@ -341,7 +348,7 @@ onMounted(() => {
 
     <!-- Barra de Filtros -->
     <div class="compliance-block">
-      <ComplianceFiltersBar v-model="filters" />
+      <ComplianceFiltersBar v-model="filters" :show-teacher-search="isAdmin" />
     </div>
 
     <!-- Tarjetas de Métricas Institucionales -->
@@ -409,7 +416,9 @@ onMounted(() => {
             >
               Subir archivo
             </UiButton>
-            <span v-else class="text-delivered">Entregado</span>
+            <span v-else class="text-delivered" :title="row.fileName || 'Entregado'">
+              {{ row.fileName ? `Entregado (${row.fileName})` : 'Entregado' }}
+            </span>
           </template>
         </UiTable>
       </UiCard>
@@ -548,6 +557,7 @@ onMounted(() => {
             { key: 'reportType', label: 'Formato' },
             { key: 'reportingMonth', label: 'Mes' },
             { key: 'status', label: 'Estado' },
+            { key: 'fileName', label: 'Archivo' },
             { key: 'delayDays', label: 'Días de retraso' },
           ]"
           :rows="docenteModalDeliverables"
@@ -560,6 +570,10 @@ onMounted(() => {
           </template>
           <template #cell-status="{ row }">
             <DeliverableStatusBadge :status="row.status" />
+          </template>
+          <template #cell-fileName="{ row }">
+            <span v-if="row.fileName" class="file-chip">{{ row.fileName }}</span>
+            <span v-else class="text-muted">—</span>
           </template>
           <template #cell-delayDays="{ row }">
             <span :class="{ 'retraso-badge': row.delayDays > 0 }">
@@ -653,6 +667,19 @@ onMounted(() => {
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--color-success, #15803d);
+}
+
+.file-chip {
+  font-family: monospace;
+  font-size: 0.75rem;
+  background-color: var(--color-gray-100, #f1f5f9);
+  color: var(--color-text-primary, #1e293b);
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+}
+
+.text-muted {
+  color: var(--color-text-muted, #94a3b8);
 }
 
 .btn-sm {

@@ -8,9 +8,15 @@ import type {
   SupportArea,
 } from '../types/referrals'
 
-const props = defineProps<{
-  periodoId: number
-}>()
+const props = withDefaults(
+  defineProps<{
+    periodoId: number
+    submitting?: boolean
+  }>(),
+  {
+    submitting: false,
+  },
+)
 
 const emit = defineEmits<{
   created: [payload: CreateReferralRequest]
@@ -26,7 +32,6 @@ const supportArea = ref<SupportArea>('Psychology')
 const referralReason = ref<ReferralReason>('Emotional')
 const observations = ref('')
 const errorMessage = ref('')
-const isSubmitting = ref(false)
 
 const careerOptions = [
   { value: 'Ingeniería en Sistemas Computacionales', label: 'Ingeniería en Sistemas Computacionales' },
@@ -67,6 +72,12 @@ watch(detectionSource, (newSource) => {
   }
 })
 
+watch(isOpen, (open) => {
+  if (!open) {
+    resetForm()
+  }
+})
+
 function resetForm() {
   matricula.value = ''
   studentCareer.value = 'Ingeniería en Sistemas Computacionales'
@@ -76,16 +87,15 @@ function resetForm() {
   referralReason.value = 'Emotional'
   observations.value = ''
   errorMessage.value = ''
-  isSubmitting.value = false
 }
 
 function handleClose() {
+  if (props.submitting) return
   isOpen.value = false
-  resetForm()
 }
 
 function handleSubmit() {
-  if (isSubmitting.value) return
+  if (props.submitting) return
 
   const cleanMatricula = matricula.value.trim()
   if (!cleanMatricula) {
@@ -109,7 +119,6 @@ function handleSubmit() {
     return
   }
 
-  isSubmitting.value = true
   errorMessage.value = ''
 
   emit('created', {
@@ -122,8 +131,6 @@ function handleSubmit() {
     referralReason: referralReason.value,
     observations: observations.value.trim() || undefined,
   })
-
-  handleClose()
 }
 </script>
 
@@ -195,10 +202,10 @@ function handleSubmit() {
       </div>
 
       <div class="dialog-actions">
-        <UiButton variant="secondary" :disabled="isSubmitting" @click="handleClose">
+        <UiButton variant="secondary" :disabled="submitting" @click="handleClose">
           Cancelar
         </UiButton>
-        <UiButton variant="primary" type="submit" :loading="isSubmitting">
+        <UiButton variant="primary" type="submit" :loading="submitting">
           Enviar Canalización
         </UiButton>
       </div>

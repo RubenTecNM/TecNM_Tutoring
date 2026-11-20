@@ -7,12 +7,14 @@ const props = withDefaults(
   defineProps<{
     modelValue: ComplianceFilters
     availablePeriodos?: { id: number; label: string }[]
+    showTeacherSearch?: boolean
   }>(),
   {
     availablePeriodos: () => [
       { id: 1, label: 'Ene - Jun 2026' },
       { id: 2, label: 'Ago - Dic 2026' },
     ],
+    showTeacherSearch: false,
   },
 )
 
@@ -118,6 +120,13 @@ function onReportTypeChange(val: string) {
     reportType: (val as ReportType) || undefined,
   })
 }
+
+function onSearchChange(val: string) {
+  emit('update:modelValue', {
+    ...props.modelValue,
+    search: val || undefined,
+  })
+}
 </script>
 
 <template>
@@ -153,6 +162,14 @@ function onReportTypeChange(val: string) {
         as="select"
         :options="reportTypeOptions"
         @update:model-value="onReportTypeChange"
+      />
+
+      <UiField
+        v-if="showTeacherSearch"
+        :model-value="modelValue.search ?? ''"
+        label="Buscar docente"
+        placeholder="Clave o nombre del docente..."
+        @update:model-value="onSearchChange"
       />
     </div>
   </UiCard>

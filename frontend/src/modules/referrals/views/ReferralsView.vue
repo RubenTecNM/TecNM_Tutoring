@@ -12,7 +12,7 @@ import {
 } from '../../../shared/components'
 import { me } from '../../auth/api/authApi'
 import type { UserResponse } from '../../auth/types/auth'
-import { referralsApi } from '../api/referralsApi'
+import { referralsApi, resolveTutorClave } from '../api/referralsApi'
 import {
   CreateReferralModal,
   ReferralFiltersBar,
@@ -35,9 +35,10 @@ interface ReferralRow extends Referral {
 const currentUser = ref<UserResponse | null>(null)
 const isAdmin = computed(() => currentUser.value?.role === 'Admin')
 
-const { syncUnreadCountFromList } = useReferralNotifications()
+const { refreshUnreadCount } = useReferralNotifications()
 
 const isLoading = ref(true)
+const isCreatingReferral = ref(false)
 const isUpdatingStatus = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
@@ -76,26 +77,32 @@ const statusEditOptions: { value: ReferralStatus; label: string }[] = [
   { value: 'Attended', label: 'Atendido' },
 ]
 
-const columns: { key: keyof ReferralRow & string; label: string }[] = [
-  { key: 'matricula', label: 'Alumno / Carrera' },
-  { key: 'supportArea', label: 'Área' },
-  { key: 'referralReason', label: 'Motivo' },
-  { key: 'detectionSource', label: 'Detectado por' },
-  { key: 'status', label: 'Estatus' },
-  { key: 'createdAt', label: 'Fecha de Envío' },
-  { key: 'actions', label: 'Acciones' },
-]
+const columns = computed<{ key: keyof ReferralRow & string; label: string }[]>(() => {
+  const base: { key: keyof ReferralRow & string; label: string }[] = [
+    { key: 'matricula', label: 'Alumno / Carrera' },
+    { key: 'supportArea', label: 'Área' },
+    { key: 'referralReason', label: 'Motivo' },
+    { key: 'detectionSource', label: 'Detectado por' },
+  ]
+  if (isAdmin.value) {
+    base.push({ key: 'tutorName', label: 'Enviado por Tutor' })
+  }
+  base.push(
+    { key: 'status', label: 'Estatus' },
+    { key: 'createdAt', label: 'Fecha de Envío' },
+    { key: 'actions', label: 'Acciones' },
+  )
+  return base
+})
 
-// Base de registros según rol (Tutor ve solo sus envíos; Coordinadora ve todos)
+// Base de registros según rol (Tutor ve estrictamente solo sus envíos; Coordinadora ve todos)
 const roleScopedReferrals = computed<Referral[]>(() => {
   if (isAdmin.value) {
     return allReferrals.value
   }
-  const username = currentUser.value?.username
-  if (!username) return []
-  return allReferrals.value.filter(
-    (r) => r.tutorClave === username || (username === 'usuario' && r.tutorClave === 'D0001'),
-  )
+  const myClave = resolveTutorClave(currentUser.value?.username)
+  if (!myClave) return []
+  return allReferrals.value.filter((r) => resolveTutorClave(r.tutorClave) === myClave)
 })
 
 // Filtros reactivos + ordenamiento obligatorio de fecha más reciente a más antigua
@@ -144,11 +151,16 @@ async function loadReferrals(): Promise<void> {
     if (!currentUser.value) {
       currentUser.value = await me()
     }
+    const tutorClave = isAdmin.value
+      ? undefined
+      : resolveTutorClave(currentUser.value?.username)
+
     allReferrals.value = await referralsApi.getReferrals({
       periodoId: filters.value.periodoId,
+      tutorClave,
     })
     if (isAdmin.value) {
-      syncUnreadCountFromList(allReferrals.value)
+      await refreshUnreadCount()
     }
   } catch {
     errorMessage.value = 'No fue posible sincronizar el listado de canalizaciones.'
@@ -165,6 +177,11 @@ watch(
 )
 
 async function handleCreateReferral(payload: CreateReferralRequest): Promise<void> {
+  if (isCreatingReferral.value) return
+
+  isCreatingReferral.value = true
+  errorMessage.value = ''
+
   try {
     const newReferral = await referralsApi.createReferral(
       payload,
@@ -174,17 +191,21 @@ async function handleCreateReferral(payload: CreateReferralRequest): Promise<voi
     )
     allReferrals.value.unshift(newReferral)
     if (isAdmin.value) {
-      syncUnreadCountFromList(allReferrals.value)
+      await refreshUnreadCount()
     }
+    isCreateModalOpen.value = false
     successMessage.value = `Canalización enviada a coordinación para la matrícula ${payload.matricula}.`
   } catch {
     errorMessage.value = 'Error al registrar la canalización.'
+  } finally {
+    isCreatingReferral.value = false
   }
 }
 
 function openDetailModal(referral: Referral): void {
   selectedReferral.value = referral
-  editStatus.value = referral.status
+  // Al abrir un reporte nuevo como coordinadora, sugerir estatus "Leído" por defecto
+  editStatus.value = isAdmin.value && isNewReferral(referral) ? 'Read' : referral.status
   editCoordinatorNotes.value = referral.coordinatorNotes ?? ''
   isDetailModalOpen.value = true
 }
@@ -215,7 +236,7 @@ async function handleUpdateStatus(): Promise<void> {
       target.updatedAt = new Date().toISOString()
     }
 
-    syncUnreadCountFromList(allReferrals.value)
+    await refreshUnreadCount()
     successMessage.value = 'El estatus de la canalización se actualizó correctamente.'
     closeDetailModal()
   } catch {
@@ -346,6 +367,13 @@ onMounted(() => {
             </div>
           </template>
 
+          <template #cell-tutorName="{ row }">
+            <div class="detector-cell">
+              <span class="source-tag">{{ row.tutorName || row.tutorClave }}</span>
+              <code class="student-id">{{ row.tutorClave }}</code>
+            </div>
+          </template>
+
           <template #cell-status="{ row }">
             <ReferralStatusBadge :status="row.status" />
           </template>
@@ -371,6 +399,7 @@ onMounted(() => {
     <CreateReferralModal
       v-model="isCreateModalOpen"
       :periodo-id="filters.periodoId"
+      :submitting="isCreatingReferral"
       @created="handleCreateReferral"
     />
 

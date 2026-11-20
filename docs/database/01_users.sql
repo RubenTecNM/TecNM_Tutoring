@@ -23,7 +23,7 @@ VALUES
         'admin',
         'admin@tecnm.local',
         'AQAAAAIAAYagAAAAEBNPxud6jX7QP1g34USJAlSAOJsyjHIeTAhoy4NdjwIvlomPzIgRfKtbJikHIXH/MA==',
-        'Administrador Demo',
+        'Lic. María Fernanda López Garza',
         'Admin',
         true
     ),
@@ -32,7 +32,16 @@ VALUES
         'usuario',
         'usuario@tecnm.local',
         'AQAAAAIAAYagAAAAEBNPxud6jX7QP1g34USJAlSAOJsyjHIeTAhoy4NdjwIvlomPzIgRfKtbJikHIXH/MA==',
-        'Usuario Demo',
+        'Ing. Carlos Alberto Mendoza Gómez',
+        'User',
+        true
+    ),
+    (
+        '10000000-0000-4000-8000-000000000003',
+        'usuario2',
+        'usuario2@tecnm.local',
+        'AQAAAAIAAYagAAAAEBNPxud6jX7QP1g34USJAlSAOJsyjHIeTAhoy4NdjwIvlomPzIgRfKtbJikHIXH/MA==',
+        'M.C. Laura Elena Sánchez Morales',
         'User',
         true
     )
@@ -47,5 +56,6 @@ ON CONFLICT (username) DO UPDATE SET
 ALTER TABLE users ADD COLUMN IF NOT EXISTS docente_clave varchar(5) NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_users_docente_clave ON users (docente_clave);
 UPDATE users SET docente_clave = 'D0001' WHERE username = 'usuario' AND docente_clave IS NULL; -- demo
+UPDATE users SET docente_clave = 'D0002' WHERE username = 'usuario2' AND docente_clave IS NULL; -- demo 2
 
 COMMIT;

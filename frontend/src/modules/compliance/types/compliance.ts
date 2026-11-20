@@ -18,6 +18,8 @@ export interface Deliverable {
   status: DeliverableStatus
   delayDays: number
   fileId?: number
+  fileName?: string
+  uploadedAt?: string
 }
 
 export interface DocenteComplianceSummary {
@@ -36,4 +38,5 @@ export interface ComplianceFilters {
   month?: number
   reportType?: ReportType
   status?: DeliverableStatus
+  search?: string
 }
