@@ -15,5 +15,5 @@ WORKDIR /app
 RUN mkdir -p /app/uploads/documents /app/uploads/templates
 COPY --from=build /app/publish .
 
-EXPOSE 5185
+EXPOSE 6090
 ENTRYPOINT ["dotnet", "TecNM.Api.dll"]

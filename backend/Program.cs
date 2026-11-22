@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 using TecNM.Api.Core.Entities;
 using TecNM.Api.Data;
 using TecNM.Api.Modules.Auth;
+using TecNM.Api.Modules.Health;
 
 const string FrontendCors = "Frontend";
 
@@ -19,6 +20,13 @@ if (string.IsNullOrWhiteSpace(connectionString))
 {
     throw new InvalidOperationException(
         "Falta ConnectionStrings__DefaultConnection en la configuración.");
+}
+
+var mainConnectionString = configuration.GetConnectionString("MainConnection");
+if (string.IsNullOrWhiteSpace(mainConnectionString))
+{
+    throw new InvalidOperationException(
+        "Falta ConnectionStrings__MainConnection en la configuración.");
 }
 
 var secret = configuration["Jwt:SecretKey"];
@@ -50,8 +58,12 @@ var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
 var jwtSettings = new JwtSettings(issuer, audience, lifetimeHours.Value, signingKey);
 
 builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<TecNMDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddDbContext<MainDbContext>(options => options.UseNpgsql(mainConnectionString));
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<HealthService>();
 builder.Services.AddScoped<PasswordHasher<User>>();
 builder.Services.AddSingleton(jwtSettings);
 builder.Services.AddCors(options => options.AddPolicy(FrontendCors, policy =>
@@ -99,11 +111,17 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+app.UseSwagger();
+app.UseSwaggerUI(c =>
+{
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "TecNM Tutoring API v1");
+    c.RoutePrefix = "swagger";
+});
+
 app.UseHttpsRedirection();
 app.UseCors(FrontendCors);
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapGet("/api/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 app.MapControllers();
 
 app.Run();

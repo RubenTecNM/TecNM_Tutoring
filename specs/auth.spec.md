@@ -52,6 +52,10 @@ Respuesta `401` de login usa mensaje genérico. No confirma si cuenta existe, es
 
 - Firma: HMAC-SHA256.
 - Claims requeridos: `sub`, `username`, `email`, `name`, `role`, `exp`, `iss`, `aud`.
+- Claim opcional: `docente_clave` (string, ≤5). Solo se emite si `users.docente_clave` no es `NULL`; si es `NULL`, el claim se omite.
+- `docente_clave` es llave lógica a `tecnm_main.docentes.clave`. Backend no valida su existencia al login; los services que lo usan resuelven el docente en `MainDbContext`.
+- `docente_clave` no forma parte de `UserResponse`. Frontend no lo recibe ni lo infiere.
+- Service que exige docente y no encuentra el claim: `403`, nunca datos vacíos ambiguos.
 - `sub` contiene `UserResponse.id`.
 - `role` solo acepta `Admin` o `User`.
 - Backend valida firma, emisor, audiencia y expiración en cada ruta protegida.
@@ -59,7 +63,7 @@ Respuesta `401` de login usa mensaje genérico. No confirma si cuenta existe, es
 
 ## Datos demo
 
-- Usuarios activos de desarrollo: `admin` con rol `Admin`; `usuario` con rol `User`.
+- Usuarios activos de desarrollo: `admin` con rol `Admin` (sin `docente_clave`); `usuario` con rol `User` y `docente_clave = D0001`.
 - Contraseña común exclusiva de desarrollo: `TecNM-Demo-2026!`.
 - PostgreSQL guarda solo hashes creados con `PasswordHasher<User>`.
 - Producción no incluye credenciales demo.
@@ -76,3 +80,5 @@ Respuesta `401` de login usa mensaje genérico. No confirma si cuenta existe, es
 8. Frontend redirige a `/login` cuando falta, es inválido o vence `session_exp`.
 9. Respuesta `401` protegida limpia estado local y redirige a `/login`.
 10. Acciones en cliente y servidor previenen dobles peticiones: interfaz bloquea reentrancia mientras procesa y operaciones mutativas aseguran unicidad de ejecución.
+11. Login de `usuario` emite JWT con claim `docente_clave = D0001`; login de `admin` emite JWT sin ese claim.
+12. `UserResponse` de `/me` y login nunca incluye `docente_clave`.

@@ -41,14 +41,18 @@ public sealed class AuthService(
         }
 
         var expiresAt = DateTimeOffset.UtcNow.AddHours(jwtSettings.LifetimeHours);
-        var claims = new[]
+        var claims = new List<Claim>
         {
-            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new Claim("username", user.Username),
-            new Claim(JwtRegisteredClaimNames.Email, user.Email),
-            new Claim(JwtRegisteredClaimNames.Name, user.Name),
-            new Claim("role", user.Role)
+            new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new("username", user.Username),
+            new(JwtRegisteredClaimNames.Email, user.Email),
+            new(JwtRegisteredClaimNames.Name, user.Name),
+            new("role", user.Role)
         };
+        if (!string.IsNullOrWhiteSpace(user.DocenteClave))
+        {
+            claims.Add(new Claim("docente_clave", user.DocenteClave));
+        }
         var token = new JwtSecurityToken(
             issuer: jwtSettings.Issuer,
             audience: jwtSettings.Audience,

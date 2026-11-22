@@ -8,6 +8,7 @@ public sealed class User
     public required string Password { get; set; }
     public required string Name { get; set; }
     public required string Role { get; set; }
+    public string? DocenteClave { get; set; }
     public bool IsActive { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
