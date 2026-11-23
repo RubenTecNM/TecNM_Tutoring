@@ -133,3 +133,50 @@ export interface DiagnosticoInicialPayload {
   failedCount: number
   groupCharacteristics: string
 }
+
+export type Anexo14IncidenceCode = 1 | 2 | 3 | 4 | 5 | 6 | 7
+
+export interface Anexo14StudentRow {
+  listNumber: number
+  controlNumber: string
+  studentName: string
+  /** Mapa índice de asignatura (0..5) -> lista de códigos de incidencia marcados (1..7) */
+  incidencesBySubject: Record<number, Anexo14IncidenceCode[]>
+}
+
+export interface Anexo14Payload {
+  instituteName: string
+  career: string
+  semester: string
+  monthLabel: string
+  tutorName: string
+  groupName: string
+  classroom: string
+  partialEvaluation: string
+  subjects: string[]
+  students: Anexo14StudentRow[]
+  individualSessions: number
+  groupSessions: number
+  observations: string
+  reportDate: string
+  tutorSignatureConfirmed: boolean
+  signatureMode: PlanTrabajoSignatureMode
+  signatureDataUrl?: string
+  coordinatorName: string
+}
+
+export interface Anexo15SubjectRow {
+  rowNumber: number
+  subjectName: string
+  /** Calificaciones de temas I..VIII (índices 0..7); cadena vacía si no evaluado, 0..100 si evaluado */
+  topics: string[]
+  observations: string
+}
+
+export interface Anexo15Payload {
+  semester: string
+  studentControlNumber?: string
+  studentName: string
+  passingGrade: number
+  subjects: Anexo15SubjectRow[]
+}

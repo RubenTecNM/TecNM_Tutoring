@@ -331,6 +331,20 @@ async function openTaskForm(task: DeliverableTask): Promise<void> {
     })
     return
   }
+  if (task.formatKey === 'Anexo14') {
+    await router.push({
+      name: 'compliance-anexo-14',
+      params: { deliverableId: task.id },
+    })
+    return
+  }
+  if (task.formatKey === 'Anexo15') {
+    await router.push({
+      name: 'compliance-anexo-15',
+      params: { deliverableId: task.id },
+    })
+    return
+  }
 
   isFormModalOpen.value = true
   isLoadingForm.value = true
