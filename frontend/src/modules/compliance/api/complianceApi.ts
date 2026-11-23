@@ -1,7 +1,17 @@
 import { http } from '../../../shared/api/http'
-import type { Deliverable, DocenteComplianceSummary, DeliverableStatus, ReportType } from '../types/compliance'
+import type {
+  ComplianceFilters,
+  DeliverableStatus,
+  DeliverableTask,
+  DocenteComplianceSummary,
+  FormatKey,
+  FormatTabDefinition,
+  PaginatedResponse,
+  PreviewFormat,
+  TemplatePreviewResult,
+} from '../types/compliance'
 
-const MOCK_COMPLIANCE_KEY = 'tecnm_compliance_mock_v2'
+const MOCK_COMPLIANCE_TASKS_KEY = 'tecnm_compliance_tasks_v3'
 
 const DOCENTES_CATALOG = [
   { clave: 'D0001', name: 'Ing. Carlos Alberto Mendoza Gómez' },
@@ -12,73 +22,106 @@ const DOCENTES_CATALOG = [
   { clave: 'D0006', name: 'M.A. Silvia Margarita Treviño Luna' },
 ]
 
-const REPORT_TYPES: { type: ReportType; monthP1: number; monthP2: number }[] = [
-  { type: 'PlanTrabajo', monthP1: 2, monthP2: 9 },
-  { type: 'DiagnosticoInicial', monthP1: 2, monthP2: 9 },
-  { type: 'Anexo14', monthP1: 3, monthP2: 10 },
-  { type: 'Anexo15', monthP1: 4, monthP2: 11 },
-  { type: 'Anexo19AMensual', monthP1: 4, monthP2: 11 },
-  { type: 'Asistencia', monthP1: 5, monthP2: 12 },
-  { type: 'Anexo19Final', monthP1: 6, monthP2: 12 },
+const MENSUAL_TABS: FormatTabDefinition[] = [
+  { tabKey: 'anexo_14_trayectoria_academica', label: 'ANEXO 14 Trayectoria Academica' },
+  { tabKey: 'anexo_15_desempeno_acad', label: 'ANEXO 15 desempeño acad' },
+  { tabKey: 'seguimiento_ind_reprob', label: 'SEGUIMIENTO IND. REPROB.' },
+  { tabKey: 'anexo_19a_mensual_tutor', label: 'Anexo 19A Mensual del tutor' },
+  { tabKey: 'seguimiento_individual', label: 'SEGUIMIENTO INDIVIDUAL' },
+  { tabKey: 'lista_asistencia', label: 'LISTA DE ASISTENCIA' },
 ]
 
-// D0001 (usuario) y D0002 (usuario2) inician limpios (todos Pendientes, sin archivos demo)
-const INITIAL_PROFILES: Record<string, { status: DeliverableStatus; delay: number; fileName?: string }[]> = {
-  D0001: [
-    { status: 'Pending', delay: 0 },
-    { status: 'Pending', delay: 0 },
-    { status: 'Pending', delay: 0 },
-    { status: 'Pending', delay: 0 },
-    { status: 'Pending', delay: 0 },
-    { status: 'Pending', delay: 0 },
-    { status: 'Pending', delay: 0 },
-  ],
-  D0002: [
-    { status: 'Pending', delay: 0 },
-    { status: 'Pending', delay: 0 },
-    { status: 'Pending', delay: 0 },
-    { status: 'Pending', delay: 0 },
-    { status: 'Pending', delay: 0 },
-    { status: 'Pending', delay: 0 },
-    { status: 'Pending', delay: 0 },
-  ],
-  D0003: [
-    { status: 'OnTime', delay: 0, fileName: 'PlanTrabajo_D0003.pdf' },
-    { status: 'OnTime', delay: 0, fileName: 'Diagnostico_D0003.pdf' },
-    { status: 'Late', delay: 3, fileName: 'Anexo14_D0003.pdf' },
-    { status: 'Late', delay: 5, fileName: 'Anexo15_D0003.pdf' },
-    { status: 'Late', delay: 3, fileName: 'Anexo19A_D0003.pdf' },
-    { status: 'Pending', delay: 0 },
-    { status: 'Pending', delay: 0 },
-  ],
-  D0004: [
-    { status: 'OnTime', delay: 0, fileName: 'PlanTrabajo_D0004.pdf' },
-    { status: 'OnTime', delay: 0, fileName: 'Diagnostico_D0004.pdf' },
-    { status: 'OnTime', delay: 0, fileName: 'Anexo14_D0004.pdf' },
-    { status: 'OnTime', delay: 0, fileName: 'Anexo15_D0004.pdf' },
-    { status: 'Late', delay: 3, fileName: 'Anexo19A_D0004.pdf' },
-    { status: 'Pending', delay: 0 },
-    { status: 'Pending', delay: 0 },
-  ],
-  D0005: [
-    { status: 'OnTime', delay: 0, fileName: 'PlanTrabajo_D0005.pdf' },
-    { status: 'OnTime', delay: 0, fileName: 'Diagnostico_D0005.pdf' },
-    { status: 'OnTime', delay: 0, fileName: 'Anexo14_D0005.pdf' },
-    { status: 'OnTime', delay: 0, fileName: 'Anexo15_D0005.pdf' },
-    { status: 'OnTime', delay: 0, fileName: 'Anexo19A_D0005.pdf' },
-    { status: 'Pending', delay: 0 },
-    { status: 'Pending', delay: 0 },
-  ],
-  D0006: [
-    { status: 'OnTime', delay: 0, fileName: 'PlanTrabajo_D0006.pdf' },
-    { status: 'Late', delay: 4, fileName: 'Diagnostico_D0006.pdf' },
-    { status: 'Late', delay: 5, fileName: 'Anexo14_D0006.pdf' },
-    { status: 'Late', delay: 4, fileName: 'Anexo15_D0006.pdf' },
-    { status: 'Late', delay: 5, fileName: 'Anexo19A_D0006.pdf' },
-    { status: 'Pending', delay: 0 },
-    { status: 'Pending', delay: 0 },
-  ],
-}
+const FINAL_TABS: FormatTabDefinition[] = [
+  { tabKey: 'anexo_19_reporte_semestral', label: 'Anexo 19 Reporte Semestral' },
+  { tabKey: 'informe_final_tutores', label: 'informe final de tutores' },
+  { tabKey: 'resultados_indice_reprob', label: 'RESULTADOS DE INDICE DE REPROB.' },
+  { tabKey: 'caracteristicas_gpo', label: 'CARACTERISTICAS DEL GPO.' },
+]
+
+const FORMAT_CATALOG: {
+  formatKey: FormatKey
+  title: string
+  hasTabs: boolean
+  tabs?: FormatTabDefinition[]
+  monthP1: number
+  monthP2: number
+  requiresPhotoEvidence: boolean
+  defaultStatus: DeliverableStatus
+  defaultDelay: number
+}[] = [
+  {
+    formatKey: 'PlanTrabajo',
+    title: 'Plan de trabajo del tutor',
+    hasTabs: false,
+    monthP1: 2,
+    monthP2: 9,
+    requiresPhotoEvidence: false,
+    defaultStatus: 'Pending',
+    defaultDelay: 0,
+  },
+  {
+    formatKey: 'DiagnosticoInicial',
+    title: 'Informe del Diagnóstico',
+    hasTabs: false,
+    monthP1: 2,
+    monthP2: 9,
+    requiresPhotoEvidence: false,
+    defaultStatus: 'Pending',
+    defaultDelay: 0,
+  },
+  {
+    formatKey: 'Anexo14',
+    title: 'Anexo 14 — Trayectoria Académica',
+    hasTabs: false,
+    monthP1: 3,
+    monthP2: 10,
+    requiresPhotoEvidence: false,
+    defaultStatus: 'Pending',
+    defaultDelay: 0,
+  },
+  {
+    formatKey: 'Anexo15',
+    title: 'Anexo 15 — Desempeño Académico',
+    hasTabs: false,
+    monthP1: 4,
+    monthP2: 11,
+    requiresPhotoEvidence: false,
+    defaultStatus: 'Pending',
+    defaultDelay: 0,
+  },
+  {
+    formatKey: 'Anexo19AMensual',
+    title: 'Anexo 19-A — Reporte Mensual del Tutor',
+    hasTabs: false,
+    monthP1: 4,
+    monthP2: 11,
+    requiresPhotoEvidence: false,
+    defaultStatus: 'Pending',
+    defaultDelay: 0,
+  },
+  {
+    formatKey: 'SeguimientoMensual',
+    title: 'Seguimiento Mensual del Tutor (6 hojas)',
+    hasTabs: true,
+    tabs: MENSUAL_TABS,
+    monthP1: 5,
+    monthP2: 12,
+    requiresPhotoEvidence: false,
+    defaultStatus: 'Pending',
+    defaultDelay: 0,
+  },
+  {
+    formatKey: 'SeguimientoFinal',
+    title: 'Seguimiento Final del Tutor (4 hojas)',
+    hasTabs: true,
+    tabs: FINAL_TABS,
+    monthP1: 6,
+    monthP2: 12,
+    requiresPhotoEvidence: true,
+    defaultStatus: 'Pending',
+    defaultDelay: 0,
+  },
+]
 
 export function resolveDocenteClave(username?: string): string {
   if (!username) return 'D0001'
@@ -87,31 +130,50 @@ export function resolveDocenteClave(username?: string): string {
   return username
 }
 
-function buildDefaultDeliverables(periodoId: number): Deliverable[] {
-  const all: Deliverable[] = []
+function buildDefaultTasks(periodoId: number): DeliverableTask[] {
+  const all: DeliverableTask[] = []
+
   for (const doc of DOCENTES_CATALOG) {
-    const profile = INITIAL_PROFILES[doc.clave] ?? INITIAL_PROFILES.D0001
-    REPORT_TYPES.forEach((rt, idx) => {
+    FORMAT_CATALOG.forEach((fmt) => {
+      const tabsPayload = fmt.tabs
+        ? Object.fromEntries(fmt.tabs.map((t) => [t.tabKey, { observations: '', items: [] }]))
+        : undefined
+
       all.push({
-        id: `${doc.clave}-${rt.type}-${periodoId}`,
+        id: `${doc.clave}-${fmt.formatKey}-${periodoId}`,
         docenteClave: doc.clave,
         periodoId,
-        reportType: rt.type,
-        reportingMonth: periodoId === 2 ? rt.monthP2 : rt.monthP1,
-        status: profile[idx].status,
-        delayDays: profile[idx].delay,
-        fileName: profile[idx].fileName,
+        formatKey: fmt.formatKey,
+        title: fmt.title,
+        hasTabs: fmt.hasTabs,
+        tabs: fmt.tabs,
+        activeTabKey: fmt.tabs?.[0]?.tabKey,
+        reportingMonth: periodoId === 2 ? fmt.monthP2 : fmt.monthP1,
+        status: fmt.defaultStatus,
+        delayDays: fmt.defaultDelay,
+        requiresPhotoEvidence: fmt.requiresPhotoEvidence,
+        photoEvidenceUrls: [],
+        prefilledData: {
+          docente_clave: doc.clave,
+          docente_nombre: doc.name,
+          periodo_id: periodoId,
+          plantel: 'TecNM Campus Monclova',
+        },
+        formPayload: fmt.hasTabs
+          ? { tabs: tabsPayload, observations: '' }
+          : { checklist: [], observations: '' },
       })
     })
   }
+
   return all
 }
 
-function loadMockStore(): Record<string, Deliverable[]> {
+function loadMockStore(): Record<string, DeliverableTask[]> {
   try {
-    const raw = localStorage.getItem(MOCK_COMPLIANCE_KEY)
+    const raw = localStorage.getItem(MOCK_COMPLIANCE_TASKS_KEY)
     if (raw) {
-      const parsed = JSON.parse(raw) as Record<string, Deliverable[]>
+      const parsed = JSON.parse(raw) as Record<string, DeliverableTask[]>
       if (parsed && typeof parsed === 'object') return parsed
     }
   } catch {
@@ -120,85 +182,240 @@ function loadMockStore(): Record<string, Deliverable[]> {
   return {}
 }
 
-function saveMockStore(store: Record<string, Deliverable[]>): void {
+function saveMockStore(store: Record<string, DeliverableTask[]>): void {
   try {
-    localStorage.setItem(MOCK_COMPLIANCE_KEY, JSON.stringify(store))
+    localStorage.setItem(MOCK_COMPLIANCE_TASKS_KEY, JSON.stringify(store))
   } catch {
     // Ignorar errores de cuota
   }
 }
 
-function getMockDeliverablesForPeriod(periodoId: number): Deliverable[] {
+function getMockTasksForPeriod(periodoId: number): DeliverableTask[] {
   const store = loadMockStore()
   const key = String(periodoId)
   if (!store[key] || store[key].length === 0) {
-    store[key] = buildDefaultDeliverables(periodoId)
+    store[key] = buildDefaultTasks(periodoId)
     saveMockStore(store)
   }
   return store[key]
 }
 
 export const complianceApi = {
-  async getDeliverablesByDocente(docenteClave: string, periodoId: number): Promise<Deliverable[]> {
+  async getDeliverables(
+    docenteClave: string,
+    periodoId: number,
+    page = 1,
+    limit = 20,
+    filters?: Pick<ComplianceFilters, 'month' | 'formatKey' | 'status'>,
+  ): Promise<PaginatedResponse<DeliverableTask>> {
     const normalizedClave = resolveDocenteClave(docenteClave)
     try {
-      const { data } = await http.get<Deliverable[]>(`/compliance/${normalizedClave}/${periodoId}`)
+      const { data } = await http.get<PaginatedResponse<DeliverableTask>>(
+        `/compliance/${normalizedClave}/${periodoId}`,
+        { params: { page, limit, ...filters } },
+      )
       return data
     } catch {
-      const periodItems = getMockDeliverablesForPeriod(periodoId)
-      const byDocente = periodItems.filter((d) => d.docenteClave === normalizedClave)
-      if (byDocente.length > 0) return byDocente
-      return periodItems.filter((d) => d.docenteClave === 'D0001')
+      const periodItems = getMockTasksForPeriod(periodoId)
+      let items = periodItems.filter((d) => d.docenteClave === normalizedClave)
+      if (items.length === 0) {
+        items = periodItems.filter((d) => d.docenteClave === 'D0001')
+      }
+      if (filters?.month) items = items.filter((i) => i.reportingMonth === filters.month)
+      if (filters?.formatKey) items = items.filter((i) => i.formatKey === filters.formatKey)
+      if (filters?.status) items = items.filter((i) => i.status === filters.status)
+
+      const total = items.length
+      const start = (page - 1) * limit
+      return {
+        data: items.slice(start, start + limit),
+        page,
+        limit,
+        total,
+      }
     }
   },
 
-  async getDocenteSummaries(periodoId: number): Promise<DocenteComplianceSummary[]> {
+  async getDocenteSummaries(
+    filters: ComplianceFilters,
+    page = 1,
+    limit = 20,
+  ): Promise<PaginatedResponse<DocenteComplianceSummary>> {
     try {
-      const { data } = await http.get<DocenteComplianceSummary[]>(`/compliance/summary?periodoId=${periodoId}`)
+      const { data } = await http.get<PaginatedResponse<DocenteComplianceSummary>>(
+        '/compliance/summary',
+        { params: { ...filters, page, limit } },
+      )
       return data
     } catch {
-      const periodItems = getMockDeliverablesForPeriod(periodoId)
+      const periodItems = getMockTasksForPeriod(filters.periodoId)
 
-      return DOCENTES_CATALOG.map((doc) => {
-        const docDeliverables = periodItems.filter((d) => d.docenteClave === doc.clave)
-        const onTime = docDeliverables.filter((d) => d.status === 'OnTime').length
-        const late = docDeliverables.filter((d) => d.status === 'Late').length
-        const pending = docDeliverables.filter((d) => d.status === 'Pending').length
-        const totalDelayDays = docDeliverables.reduce((acc, curr) => acc + curr.delayDays, 0)
+      let summaries: DocenteComplianceSummary[] = DOCENTES_CATALOG.map((doc) => {
+        let docItems = periodItems.filter((d) => d.docenteClave === doc.clave)
+        if (filters.month) docItems = docItems.filter((i) => i.reportingMonth === filters.month)
+        if (filters.formatKey) docItems = docItems.filter((i) => i.formatKey === filters.formatKey)
+        if (filters.status) docItems = docItems.filter((i) => i.status === filters.status)
+
+        const onTime = docItems.filter((d) => d.status === 'OnTime').length
+        const late = docItems.filter((d) => d.status === 'Late').length
+        const pending = docItems.filter((d) => d.status === 'Pending').length
+        const totalDelayDays = docItems.reduce((acc, curr) => acc + curr.delayDays, 0)
 
         return {
           docenteClave: doc.clave,
           docenteName: doc.name,
-          totalDeliverables: docDeliverables.length,
+          totalDeliverables: docItems.length,
           onTime,
           late,
           pending,
           totalDelayDays,
-          deliverables: docDeliverables,
         }
       })
+
+      if (filters.search?.trim()) {
+        const q = filters.search.trim().toLowerCase()
+        summaries = summaries.filter(
+          (s) => s.docenteClave.toLowerCase().includes(q) || s.docenteName.toLowerCase().includes(q),
+        )
+      }
+
+      const total = summaries.length
+      const start = (page - 1) * limit
+      return {
+        data: summaries.slice(start, start + limit),
+        page,
+        limit,
+        total,
+      }
     }
   },
 
-  async uploadDeliverable(deliverableId: string, file: File): Promise<void> {
-    const formData = new FormData()
-    formData.append('file', file)
+  async getDeliverableForm(deliverableId: string, tabKey?: string): Promise<DeliverableTask> {
     try {
-      await http.post(`/compliance/${deliverableId}/upload`, formData)
+      const { data } = await http.get<DeliverableTask>(`/compliance/tasks/${deliverableId}`, {
+        params: { tabKey },
+      })
+      return data
     } catch {
-      await new Promise((resolve) => setTimeout(resolve, 400))
       const store = loadMockStore()
       for (const key of Object.keys(store)) {
-        const item = store[key].find((d) => d.id === deliverableId)
-        if (item) {
-          item.status = 'OnTime'
-          item.delayDays = 0
-          item.fileName = file.name
-          item.uploadedAt = new Date().toISOString()
-          saveMockStore(store)
-          break
+        const found = store[key].find((t) => t.id === deliverableId)
+        if (found) {
+          return {
+            ...found,
+            activeTabKey: tabKey ?? found.activeTabKey ?? found.tabs?.[0]?.tabKey,
+          }
         }
       }
+      throw new Error(`Tarea no encontrada: ${deliverableId}`)
     }
+  },
+
+  async saveDeliverableForm(
+    deliverableId: string,
+    payload: {
+      tabKey?: string
+      formPayload: Record<string, unknown>
+      photoEvidenceFiles?: File[]
+      submit?: boolean
+    },
+  ): Promise<DeliverableTask> {
+    try {
+      const hasFiles = Boolean(payload.photoEvidenceFiles && payload.photoEvidenceFiles.length > 0)
+      if (hasFiles) {
+        const formData = new FormData()
+        formData.append('formPayload', JSON.stringify(payload.formPayload))
+        if (payload.tabKey) formData.append('tabKey', payload.tabKey)
+        formData.append('submit', String(Boolean(payload.submit)))
+        payload.photoEvidenceFiles!.forEach((file) => formData.append('photoEvidenceFiles', file))
+        const { data } = await http.post<DeliverableTask>(
+          `/compliance/tasks/${deliverableId}/form`,
+          formData,
+        )
+        return data
+      }
+
+      const { data } = await http.put<DeliverableTask>(
+        `/compliance/tasks/${deliverableId}/form`,
+        {
+          tabKey: payload.tabKey,
+          formPayload: payload.formPayload,
+          submit: Boolean(payload.submit),
+        },
+      )
+      return data
+    } catch (error: unknown) {
+      const status = (error as { response?: { status?: number } })?.response?.status
+      if (status === 409 || status === 413 || status === 415 || status === 422) {
+        throw error
+      }
+      const store = loadMockStore()
+      for (const key of Object.keys(store)) {
+        const item = store[key].find((t) => t.id === deliverableId)
+        if (item) {
+          if (payload.tabKey && item.hasTabs) {
+            const currentTabs =
+              (item.formPayload.tabs as Record<string, unknown> | undefined) ?? {}
+            item.formPayload = {
+              ...item.formPayload,
+              tabs: {
+                ...currentTabs,
+                [payload.tabKey]: payload.formPayload,
+              },
+            }
+            item.activeTabKey = payload.tabKey
+          } else {
+            item.formPayload = {
+              ...item.formPayload,
+              ...payload.formPayload,
+            }
+          }
+
+          if (item.requiresPhotoEvidence && payload.photoEvidenceFiles?.length) {
+            const newUrls = payload.photoEvidenceFiles.map((f) => URL.createObjectURL(f))
+            item.photoEvidenceUrls = [...(item.photoEvidenceUrls ?? []), ...newUrls]
+          }
+
+          if (payload.submit) {
+            item.status = 'OnTime'
+            item.delayDays = 0
+          }
+          item.updatedAt = new Date().toISOString()
+          saveMockStore(store)
+          return { ...item }
+        }
+      }
+      throw new Error(`No se pudo guardar la tarea: ${deliverableId}`)
+    }
+  },
+
+  async previewDeliverableTemplate(
+    deliverableId: string,
+    tabKey?: string,
+    format: PreviewFormat = 'pdf',
+  ): Promise<TemplatePreviewResult> {
+    try {
+      const { data } = await http.get<TemplatePreviewResult>(
+        `/compliance/tasks/${deliverableId}/preview`,
+        { params: { tabKey, format } },
+      )
+      return data
+    } catch {
+      return {
+        deliverableId,
+        tabKey,
+        previewFormat: format,
+        previewUrlOrContent: '',
+        fileName: `${deliverableId}${tabKey ? `_${tabKey}` : ''}.${format}`,
+      }
+    }
+  },
+
+  async exportDeliverableTemplate(deliverableId: string, tabKey?: string): Promise<Blob> {
+    const { data } = await http.get<Blob>(`/compliance/tasks/${deliverableId}/export`, {
+      params: { tabKey },
+      responseType: 'blob',
+    })
+    return data
   },
 }

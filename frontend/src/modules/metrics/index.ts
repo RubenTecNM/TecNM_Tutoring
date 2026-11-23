@@ -1,1 +1,1 @@
-export const metricsRoutes = [];
+export { metricsRoutes } from './routes'

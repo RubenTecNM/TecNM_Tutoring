@@ -1,72 +1,138 @@
 # Compliance — Spec Frontend
 
-Contrato compartido de BD: [`docs/specs/especificaciones_de_base_de_datos.md`](../../../../../docs/specs/especificaciones_de_base_de_datos.md).  
-Spec de BD del módulo: [`backend/Modules/Compliance/specs/compliance_database_spec.md`](../../../../../backend/Modules/Compliance/specs/compliance_database_spec.md).  
+Contrato compartido de BD: [`docs/specs/especificaciones_de_base_de_datos.md`](../../../../../docs/specs/especificaciones_de_base_de_datos.md).
+Spec de BD del módulo: [`backend/Modules/Compliance/specs/compliance_database_spec.md`](../../../../../backend/Modules/Compliance/specs/compliance_database_spec.md).
+Spec de Métricas y Cierre: [`frontend/src/modules/metrics/specs/metrics.spec.md`](../../metrics/specs/metrics.spec.md).
 Este archivo añade responsabilidades exclusivas del frontend. No duplica contratos HTTP ni esquema de BD.
 
 ---
 
-## 1. Dominio
+## 1. Dominio y Reglas de Captura
 
-Permite a docentes subir sus 7 entregables mensuales de tutoría y al Admin monitorear el cumplimiento de los 54 docentes con un semáforo de mora.
+Migra el flujo del tutor de subida de archivos arbitrarios a **tareas/formularios estructurados pre-rellenados** desde PostgreSQL 18 (`snake_case`), manteniendo el monitoreo de cumplimiento de los 54 docentes y el semáforo de mora para `Admin`[cite: 3, 4, 5, 6].
+
+**Reglas de negocio de captura y exportación:**
+- **Sin subida de archivos como flujo principal:** El tutor no sube archivos arbitrarios. El sistema pre-rellena datos existentes en BD (alumnos, matrículas, números de lista, carrera, semestre, grupo, turno, tutor) y el docente completa únicamente campos faltantes (checklists, calificaciones/incidencias, observaciones y datos requeridos).
+- **Evidencias fotográficas condicionales:** Solo se habilitan/solicitan evidencias fotográficas en los formatos o actividades que lo requieran; no se exigen cuando no aplican.
+- **Tiempos de entrega parametrizables:** Las fechas o ventanas de entrega quedan configurables para agregarse después sin bloquear la captura, guardado, vista previa ni exportación.
+- **Vista previa y exportación desde plantilla:** Al exportar un anexo/formato, los datos persistidos en BD se inyectan en la plantilla oficial correspondiente (respetando hojas y celdas en `.xlsx`) y se ofrece vista previa en el navegador (PDF o visor `.xlsx`) antes o al descargar.
+- **Cierre / Reporte Semestral Final:** Se consolida dentro del módulo `metrics` al alcanzar el umbral del 90% (9 de 10 entregas) para elaborar el reporte semestral final.
 
 **Roles y alcance:**
 
 | Rol JWT | Acceso |
 | :--- | :--- |
-| `Admin` | Visualiza tabla completa de los 54 docentes. Filtra por periodo, mes y tipo. No sube archivos. |
-| `User` (Docente) | Ve solo sus propios entregables (`docente_clave` del JWT). Sube archivos. |
+| `Admin` | Visualiza tabla completa de los 54 docentes, filtra por periodo, mes, formato/pestaña y estado, consulta detalle de tareas/respuestas por docente, previsualiza y exporta desde plantilla. No llena tareas de tutor. |
+| `User` (Docente) | Ve solo sus propias tareas/formatos asignados (`docente_clave` resuelto en backend). Completa formularios/tablas pre-rellenados, guarda/envía avances, adjunta evidencias fotográficas solo si el formato lo requiere y consulta vista previa/exportación propia según aplique. |
 
-Filtrado por rol ocurre en el servicio backend mediante LINQ sobre claims JWT. Frontend nunca filtra ni infiere permisos.
+Filtrado por rol y autoridad de negocio ocurren en el backend (.NET 10). Frontend no infiere permisos ni calcula reglas críticas de estado.
 
 ---
 
-## 2. Tipos TypeScript (ampliación de `types/compliance.ts`)
+## 2. Catálogo de Formatos / Tareas del Docente / Tutor (7 Archivos)
+
+Los 7 archivos del Docente / Tutor se estructuran como **ventanas únicas** (sin múltiples hojas) o **vistas con pestañas** (libros `.xlsx` multi-hoja):
+
+### Ventana única (5 formatos)
+1. `PlanTrabajo` — **Plan de trabajo del tutor** (`FORMATO PLAN DE TRABAJO TUTORIAS ene-junio-26.docx`)[cite: 3].
+2. `DiagnosticoInicial` — **Informe del Diagnóstico** (`DIAGNOSTICO-INICIAL TUTORIAS - FJ-26.xlsx`).
+3. `Anexo14` — **Formato de Seguimiento de la Trayectoria Académica** (`Anexo 14.docx`)[cite: 5].
+4. `Anexo15` — **Formato de Registro para Desempeño Académico** (`Anexo 15.docx`)[cite: 4].
+5. `Anexo19AMensual` — **Reporte Mensual del Tutor** (`Anexo 19-A.docx`)[cite: 6].
+
+### Vista con pestañas — Seguimiento Mensual (`Anexos Seguimiento de Tutorías-MENSUAL-FJ-26.xlsx`, 6 pestañas)
+6. `SeguimientoMensual` — Pestañas:
+   - `anexo_14_trayectoria_academica` (*ANEXO 14 Trayectoria Academica*)
+   - `anexo_15_desempeno_acad` (*ANEXO 15 desempeño acad*)
+   - `seguimiento_ind_reprob` (*SEGUIMIENTO IND. REPROB.*)
+   - `anexo_19a_mensual_tutor` (*Anexo 19A Mensual del tutor*)
+   - `seguimiento_individual` (*SEGUIMIENTO INDIVIDUAL*)
+   - `lista_asistencia` (*LISTA DE ASISTENCIA*)
+
+### Vista con pestañas — Seguimiento Final (`Anexos Seguimiento de Tutorías-FINAL- FJ-26.xlsx`, 4 pestañas)
+7. `SeguimientoFinal` — Pestañas:
+   - `anexo_19_reporte_semestral` (*Anexo 19 Reporte Semestral*)
+   - `informe_final_tutores` (*informe final de tutores*)
+   - `resultados_indice_reprob` (*RESULTADOS DE INDICE DE REPROB.*)
+   - `caracteristicas_gpo` (*CARACTERISTICAS DEL GPO.*)
+
+*(Nota: Los formatos de Coordinación —`REPORTE SEMESTRAL DEL COORNADOR  EDITABLE.xlsx` y `tutores a-d 2026.xlsx`— y el insumo `Resultados-por-unidad FINAL.xls` pertenecen al módulo `metrics`).*
+
+---
+
+## 3. Tipos TypeScript (`types/compliance.ts`)
 
 ```ts
-// Ya existente — ampliar sin romper
-export type ReportType =
+export type FormatKey =
   | 'PlanTrabajo'
   | 'DiagnosticoInicial'
   | 'Anexo14'
   | 'Anexo15'
   | 'Anexo19AMensual'
-  | 'Asistencia'
-  | 'Anexo19Final';
+  | 'SeguimientoMensual'
+  | 'SeguimientoFinal';
 
 export type DeliverableStatus = 'Pending' | 'OnTime' | 'Late';
 
-export interface Deliverable {
+export type PreviewFormat = 'pdf' | 'xlsx';
+
+export interface FormatTabDefinition {
+  tabKey: string;
+  label: string;
+  requiresPhotoEvidence?: boolean;
+}
+
+export interface PrefilledFieldValue {
+  key: string;
+  label: string;
+  value: string | number | boolean | null;
+}
+
+export interface DeliverableTask {
   id: string;
   docenteClave: string;
   periodoId: number;
-  reportType: ReportType;
-  reportingMonth: number;      // 1-12
+  formatKey: FormatKey;
+  title: string;
+  hasTabs: boolean;
+  tabs?: FormatTabDefinition[];
+  activeTabKey?: string;
+  reportingMonth?: number; // 1-12 si aplica
   status: DeliverableStatus;
   delayDays: number;
-  fileId?: number;
+  requiresPhotoEvidence: boolean;
+  photoEvidenceUrls?: string[];
+  prefilledData: Record<string, unknown>;
+  formPayload: Record<string, unknown>;
+  updatedAt?: string;
 }
 
-// Para Admin: resumen por docente
 export interface DocenteComplianceSummary {
   docenteClave: string;
-  docenteName: string;         // resuelto en backend vía MainDbContext
+  docenteName: string;
   totalDeliverables: number;
   pending: number;
   onTime: number;
   late: number;
-  totalDelayDays: number;      // suma de delay_days del docente
+  totalDelayDays: number;
 }
 
-// Filtros activos en la vista
 export interface ComplianceFilters {
   periodoId: number;
-  month?: number;              // 1-12 | undefined = todos los meses
-  reportType?: ReportType;
+  month?: number;
+  formatKey?: FormatKey;
   status?: DeliverableStatus;
+  search?: string;
 }
 
-// Paginación (patrón docs/specs/pagination.spec.md)
+export interface TemplatePreviewResult {
+  deliverableId: string;
+  tabKey?: string;
+  previewFormat: PreviewFormat;
+  previewUrlOrContent: string;
+  fileName: string;
+}
+
 export interface PaginatedResponse<T> {
   data: T[];
   page: number;
@@ -77,217 +143,9 @@ export interface PaginatedResponse<T> {
 
 ---
 
-## 3. API (`api/complianceApi.ts`) — ampliar sin romper lo existente
+## 4. Guardas de Integridad, Pestañas y Manejo de Errores HTTP
 
-```ts
-// Endpoints a implementar (los que no existan aún)
-
-// Admin: lista resumen de todos los docentes para el dashboard
-getDocenteSummaries(filters: ComplianceFilters, page: number, limit: number)
-  → GET /api/compliance/summary?periodoId=&page=&limit=&month=&status=
-  → PaginatedResponse<DocenteComplianceSummary>
-
-// Admin + User: detalle de entregables de UN docente
-getDeliverables(docenteClave, periodoId, page, limit)
-  → GET /api/compliance/{docenteClave}/{periodoId}?page=&limit=
-  → PaginatedResponse<Deliverable>   ← ampliar tipo de retorno actual
-
-// User: subir archivo
-uploadDeliverable(deliverableId, file)
-  → POST /api/compliance/{deliverableId}/upload   (multipart/form-data)
-  → void   ← ya existe
-```
-
-Reglas:
-- `withCredentials: true` vía `http` compartido.
-- Bloquear reentrancia en upload: `if (isUploading.value) return`.
-- En error `413 Payload Too Large`: mostrar "El archivo excede el tamaño permitido."
-- En error `415 Unsupported Media Type`: mostrar "Solo se aceptan archivos PDF, DOC o DOCX."
-- En error `409 Conflict` (ya entregado y en tiempo): mostrar mensaje del backend.
-
----
-
-## 4. Vistas
-
-### 4.1 `ComplianceView.vue` — vista principal (única vista del módulo)
-
-**Ruta:** `/compliance`  
-**Requiere auth:** sí  
-**Componente raíz:** `UiBasePage fluid`
-
-**Comportamiento por rol:**
-
-#### Vista Admin
-```
-UiBasePage (fluid, title="Cumplimiento Docente")
-  └─ UiPageHeader
-       slot actions → UiButton "Exportar" (secondary)
-  └─ Barra de filtros (periodo, mes, tipo, estado)
-  └─ KPIs resumen (4 UiMetric)
-       - Total docentes · Entregados en tiempo · Con retraso · Pendientes
-  └─ UiTable → DocenteComplianceSummary[]
-       Columnas: Docente | Entregados | En tiempo | Con retraso | Días mora | Acción
-       Fila clic → navega a detalle del docente (/compliance/:docenteClave)
-  └─ Paginación (Anterior / Siguiente / página actual)
-```
-
-#### Vista User (Docente)
-```
-UiBasePage (fluid, title="Mis Entregables de Tutoría")
-  └─ Selector de periodo (mes actual por defecto)
-  └─ UiTable → Deliverable[] del docente autenticado
-       Columnas: Tipo | Mes | Estado | Días mora | Archivo | Acción
-       Fila con status=Pending → botón "Subir" activo
-       Fila con status=OnTime/Late → muestra badge + enlace a archivo (si file_id)
-  └─ Paginación
-```
-
-### 4.2 `ComplianceDetailView.vue` — detalle de un docente (solo Admin)
-
-**Ruta:** `/compliance/:docenteClave`  
-**Requiere auth:** sí · rol: `Admin`  
-**Componente raíz:** `UiBasePage fluid`
-
-```
-UiBasePage (title="Entregables — {nombreDocente}")
-  └─ UiPageHeader slot actions → UiButton "← Volver"
-  └─ Selector de periodo y mes
-  └─ UiTable → Deliverable[] del docente
-       Columnas: Tipo | Mes | Estado | Días mora | Archivo
-  └─ Paginación
-```
-
----
-
-## 5. Componentes locales (`components/`)
-
-### `DeliverableStatusBadge.vue`
-Props: `status: DeliverableStatus`  
-Renderiza `UiChip` / `UiBadge` con color semántico del sistema de diseño TecNM:
-
-| Status | Variante | Texto |
-| :--- | :--- | :--- |
-| `Pending` | warning | Pendiente |
-| `OnTime` | success | En tiempo |
-| `Late` | danger | Con retraso |
-
-### `DeliverableUploadButton.vue`
-Props: `deliverableId: string`, `disabled: boolean`  
-- Renderiza `UiButton variant="primary"` con `loading` durante upload.
-- Acepta solo `.pdf`, `.doc`, `.docx` vía `accept`.
-- Emite `uploaded` al completar · `error` con mensaje en caso de fallo.
-- Guard de reentrancia interno: `if (isUploading.value) return`.
-
-### `ComplianceFiltersBar.vue`
-Props: `modelValue: ComplianceFilters`, lista de periodos disponibles.  
-Emite `update:modelValue` al cambiar cualquier filtro.  
-Componentes internos: `UiField as="select"` para periodo, mes, tipo y estado.
-
-### `ComplianceSummaryKpis.vue`
-Props: `summaries: DocenteComplianceSummary[]`  
-Renderiza 4 `UiMetric`: total, en tiempo, con retraso, pendientes.  
-Calcula totales desde la prop — sin llamada HTTP adicional.
-
----
-
-## 6. Composables (`composables/`)
-
-### `useComplianceAdmin.ts`
-Estado: `summaries`, `loading`, `error`, `filters`, `pagination`.  
-Métodos: `fetchSummaries()`, `updateFilters(partial)`, `goToPage(n)`.  
-Guard de reentrancia: `if (loading.value) return`.
-
-### `useComplianceDocente.ts`
-Estado: `deliverables`, `loading`, `error`, `selectedPeriodo`, `pagination`.  
-Métodos: `fetchDeliverables()`, `uploadFile(deliverableId, file)`.  
-Después de upload exitoso: `fetchDeliverables()` para refrescar tabla.
-
----
-
-## 7. Rutas (`routes.ts`) — reemplazar contenido actual
-
-```ts
-import type { RouteRecordRaw } from 'vue-router';
-
-export const complianceRoutes: RouteRecordRaw[] = [
-  {
-    path: '/compliance',
-    name: 'compliance',
-    component: () => import('./views/ComplianceView.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
-    path: '/compliance/:docenteClave',
-    name: 'compliance-detail',
-    component: () => import('./views/ComplianceDetailView.vue'),
-    meta: { requiresAuth: true, roles: ['Admin'] },
-  },
-];
-```
-
-Ambas vistas usan lazy loading.  
-Guard de roles en `meta.roles` — el router raíz ya maneja redirección `403`.
-
----
-
-## 8. Barrel export (`index.ts`)
-
-```ts
-export { complianceRoutes } from './routes';
-export type { Deliverable, DocenteComplianceSummary, ComplianceFilters } from './types/compliance';
-```
-
-Solo exportar lo que consuman otros módulos o el router raíz.
-
----
-
-## 9. Integración con MainLayout
-
-Agregar a `sidebarNavigation` en `mainLayout.config.ts`:
-
-```ts
-{ label: 'Cumplimiento', to: { name: 'compliance' } }
-```
-
-Agregar `complianceRoutes` a `children` de la ruta padre protegida en `app/router/index.ts`.
-
----
-
-## 10. UI / Diseño (tokens de `DESIGN.md`)
-
-- Raíz de contenido: `UiBasePage fluid`.
-- Encabezado de módulo: `UiPageHeader` con `title` y slot `actions`.
-- Tablas: `UiTable` con hover row en `--color-primary-subtle`.
-- Badges de estado: `DeliverableStatusBadge` usando tokens semánticos success/warning/danger.
-- KPIs: `UiMetric` con borde superior dorado (`--color-accent`) para "Con retraso".
-- Formularios de filtro: `UiField as="select"` con tokens de borde y foco del sistema.
-- Botón de subida: `UiButton variant="primary"` · mínimo 44 px · foco visible 2 px.
-- Responsive: funcional desde 375 px. Tabla con scroll horizontal en móvil.
-- Temas: claro y oscuro soportados vía tokens CSS globales. No hardcodear colores.
-
----
-
-## 11. Accesibilidad
-
-- `UiTable` con encabezados `<th scope="col">` en español.
-- Estados de carga con `aria-busy="true"` en la región de tabla.
-- Errores y confirmaciones de upload en región `aria-live="polite"`.
-- Controles de paginación como `<nav aria-label="Paginación">`.
-- `DeliverableUploadButton` describe el tipo de entregable en `aria-label`.
-
----
-
-## 12. Criterios de aceptación
-
-1. Admin carga `/compliance` y ve resumen de los 54 docentes con KPIs correctos.
-2. Admin filtra por periodo, mes, tipo y estado; tabla se actualiza sin recargar página.
-3. Admin navega a detalle de un docente y ve sus 7 entregables del periodo.
-4. User (Docente) carga `/compliance` y ve solo sus propios entregables.
-5. User sube archivo PDF/DOC/DOCX; fila cambia estado a `OnTime` o `Late` según fecha.
-6. User intenta subir tipo MIME no permitido; recibe mensaje de error claro en es-MX.
-7. Doble clic en "Subir" no genera dos peticiones (guard reentrancia activo).
-8. Paginación funciona: cambiar página actualiza tabla sin recargar.
-9. Semáforo de mora (badge) refleja `status` exacto devuelto por backend.
-10. Vista es responsive desde 375 px; tabla tiene scroll horizontal en móvil.
-11. Ambos temas (claro/oscuro) funcionan sin colores hardcodeados.
-12. Backend conserva autoridad: frontend no filtra por rol desde JWT.
+- **Persistencia por pestaña:** Los libros multi-hoja (`SeguimientoMensual` y `SeguimientoFinal`) guardan su contenido por `tabKey` de forma independiente, advirtiendo antes de descartar cambios no guardados al cambiar de pestaña o cerrar el formulario.
+- **Reentrancia:** Botones de guardado, vista previa y exportación bloquean ejecuciones concurrentes (`isSaving`, `isPreviewing`, `isExporting`).
+- **Errores HTTP manejados en UI:** `409 Conflict` (concurrencia optimista/duplicado), `413 Payload Too Large` (evidencia fotográfica > 5 MB), `415 Unsupported Media Type` (MIME distinto a `image/jpeg`, `image/png`, `image/webp`) y `422 Unprocessable Entity` (campos obligatorios faltantes o rangos numéricos inválidos al exportar).
+- **Pre-validación de exportación:** Advierte o bloquea la descarga si faltan campos obligatorios en la captura del formato o pestaña.

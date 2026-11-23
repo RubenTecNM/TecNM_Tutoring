@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { UiCard, UiField } from '../../../shared/components'
-import type { ComplianceFilters, DeliverableStatus, ReportType } from '../types/compliance'
+import type { ComplianceFilters, DeliverableStatus, FormatKey } from '../types/compliance'
 
 const props = withDefaults(
   defineProps<{
@@ -52,7 +52,6 @@ const monthOptions = computed(() => {
     ]
   }
 
-  // Otros periodos: conjunto general de meses lectivos
   return [
     allOption,
     { value: '2', label: 'Febrero' },
@@ -74,15 +73,15 @@ const statusOptions = [
   { value: 'Pending', label: 'Pendiente' },
 ]
 
-const reportTypeOptions = [
+const formatOptions: { value: FormatKey | ''; label: string }[] = [
   { value: '', label: 'Todos los formatos' },
-  { value: 'PlanTrabajo', label: 'Plan de Trabajo (Semestral)' },
-  { value: 'DiagnosticoInicial', label: 'Diagnóstico Inicial' },
-  { value: 'Anexo14', label: 'Anexo 14 (Trayectoria)' },
-  { value: 'Anexo15', label: 'Anexo 15 (Desempeño)' },
-  { value: 'Anexo19AMensual', label: 'Anexo 19A (Reporte Mensual)' },
-  { value: 'Asistencia', label: 'Lista de Asistencia' },
-  { value: 'Anexo19Final', label: 'Anexo 19 Final' },
+  { value: 'PlanTrabajo', label: 'Plan de trabajo del tutor' },
+  { value: 'DiagnosticoInicial', label: 'Informe del Diagnóstico' },
+  { value: 'Anexo14', label: 'Anexo 14 — Trayectoria Académica' },
+  { value: 'Anexo15', label: 'Anexo 15 — Desempeño Académico' },
+  { value: 'Anexo19AMensual', label: 'Anexo 19-A — Reporte Mensual' },
+  { value: 'SeguimientoMensual', label: 'Seguimiento Mensual (6 hojas)' },
+  { value: 'SeguimientoFinal', label: 'Seguimiento Final (4 hojas)' },
 ]
 
 function onPeriodoChange(val: string) {
@@ -114,10 +113,10 @@ function onStatusChange(val: string) {
   })
 }
 
-function onReportTypeChange(val: string) {
+function onFormatKeyChange(val: string) {
   emit('update:modelValue', {
     ...props.modelValue,
-    reportType: (val as ReportType) || undefined,
+    formatKey: (val as FormatKey) || undefined,
   })
 }
 
@@ -130,7 +129,7 @@ function onSearchChange(val: string) {
 </script>
 
 <template>
-  <UiCard title="Filtros de Búsqueda" description="Filtrar por periodo lectivo, mes o estatus">
+  <UiCard title="Filtros de Búsqueda" description="Filtrar por periodo lectivo, mes, formato o estado">
     <div class="filters-grid">
       <UiField
         :model-value="String(modelValue.periodoId)"
@@ -157,11 +156,11 @@ function onSearchChange(val: string) {
       />
 
       <UiField
-        :model-value="modelValue.reportType ?? ''"
-        label="Tipo de formato"
+        :model-value="modelValue.formatKey ?? ''"
+        label="Formato / anexo"
         as="select"
-        :options="reportTypeOptions"
-        @update:model-value="onReportTypeChange"
+        :options="formatOptions"
+        @update:model-value="onFormatKeyChange"
       />
 
       <UiField

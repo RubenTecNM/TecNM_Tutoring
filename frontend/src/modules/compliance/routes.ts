@@ -1,4 +1,4 @@
-import type { RouteRecordRaw } from 'vue-router';
+import type { RouteRecordRaw } from 'vue-router'
 
 export const complianceRoutes: RouteRecordRaw[] = [
   {
@@ -7,7 +7,16 @@ export const complianceRoutes: RouteRecordRaw[] = [
     component: () => import('./views/ComplianceView.vue'),
     meta: {
       requiresAuth: true,
-      roles: ['Docente', 'Tutor']
-    }
-  }
-];
+      roles: ['Docente', 'Tutor'],
+    },
+  },
+  {
+    path: '/compliance/plan-trabajo/:deliverableId',
+    name: 'compliance-plan-trabajo',
+    component: () => import('./views/PlanTrabajoView.vue'),
+    meta: {
+      requiresAuth: true,
+      title: 'Plan de Trabajo de Tutorías',
+    },
+  },
+]
