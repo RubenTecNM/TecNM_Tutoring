@@ -117,3 +117,19 @@ export interface PlanTrabajoPayload {
   signatureMode: PlanTrabajoSignatureMode
   signatureDataUrl?: string
 }
+
+export interface DiagnosticoInicialPayload {
+  sheetKey: 'informe_del_diagnostico'
+  excelSheetName: string
+  tutorName: string
+  reportDate: string
+  groupName: string
+  shift: 'Matutino' | 'Vespertino'
+  periodLabel: string
+  totalReceivedStudents: number
+  droppedOutCount: number
+  dropoutReasons: string
+  approvedCount: number
+  failedCount: number
+  groupCharacteristics: string
+}

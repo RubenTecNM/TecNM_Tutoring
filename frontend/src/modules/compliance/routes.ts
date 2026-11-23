@@ -19,4 +19,13 @@ export const complianceRoutes: RouteRecordRaw[] = [
       title: 'Plan de Trabajo de Tutorías',
     },
   },
+  {
+    path: '/compliance/diagnostico-inicial/:deliverableId',
+    name: 'compliance-diagnostico-inicial',
+    component: () => import('./views/DiagnosticoInicialView.vue'),
+    meta: {
+      requiresAuth: true,
+      title: 'Análisis del Diagnóstico Inicial',
+    },
+  },
 ]

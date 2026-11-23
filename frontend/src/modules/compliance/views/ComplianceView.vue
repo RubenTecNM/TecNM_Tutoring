@@ -324,6 +324,13 @@ async function openTaskForm(task: DeliverableTask): Promise<void> {
     })
     return
   }
+  if (task.formatKey === 'DiagnosticoInicial') {
+    await router.push({
+      name: 'compliance-diagnostico-inicial',
+      params: { deliverableId: task.id },
+    })
+    return
+  }
 
   isFormModalOpen.value = true
   isLoadingForm.value = true
