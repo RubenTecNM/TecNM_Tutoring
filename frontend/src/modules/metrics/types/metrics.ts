@@ -112,4 +112,19 @@ export interface WorkbookPreviewResult {
   fileName: string
 }
 
+export interface UnitFailureRow {
+  id: string
+  subjectName: string
+  teacherName: string
+  /** Porcentajes de reprobación por unidad I..VIII (0..100, cadena vacía si no evaluada) */
+  units: string[]
+}
+
+export interface UnitFailureTrackingPayload {
+  periodoId: number
+  rows: UnitFailureRow[]
+  comments: string
+  updatedAt?: string
+}
+
 export type PaginatedFailureReports = PaginatedResponse<FailureReportItem>

@@ -33,9 +33,17 @@ function handleFileSelect(event: Event) {
   const file = input.files?.[0]
   if (!file) return
 
-  const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
+  const dotIdx = file.name.lastIndexOf('.')
+  const ext = dotIdx >= 0 ? file.name.slice(dotIdx).toLowerCase() : ''
   if (!VALID_EXTS.includes(ext)) {
     errorMessage.value = 'Formato no permitido. Solo se admite .xls o .xlsx (415).'
+    selectedFile.value = null
+    input.value = ''
+    return
+  }
+
+  if (file.size === 0) {
+    errorMessage.value = 'El archivo está vacío. Selecciona un archivo válido (422).'
     selectedFile.value = null
     input.value = ''
     return
@@ -92,6 +100,7 @@ async function handleImport() {
           type="file"
           accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           class="sr-only"
+          :disabled="isUploading"
           @change="handleFileSelect"
         />
         <label for="unit-results-input" class="drop-label">

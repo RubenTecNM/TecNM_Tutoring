@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   UiAlert,
   UiBadge,
@@ -18,11 +19,10 @@ import type { UserResponse } from '../../auth/types/auth'
 import type { PreviewFormat } from '../../compliance/types/compliance'
 import { metricsApi } from '../api/metricsApi'
 import {
-  CoordinatorWorkbookPanel,
   FailureRiskBadge,
   MetricsFiltersBar,
   ReadinessThresholdBanner,
-  UnitResultsImportModal,
+  UnitFailureTrackingPanel,
 } from '../components'
 import type {
   CoordinatorFormatKey,
@@ -74,6 +74,7 @@ const isFinalizing = ref(false)
 
 // Modal de importación de Resultados-por-unidad FINAL.xls (Admin)
 const isImportModalOpen = ref(false)
+const latestImport = ref<UnitResultsImportResponse | null>(null)
 
 // Modal de captura de reprobación (Tutor)
 const isCreateFailureOpen = ref(false)
@@ -171,6 +172,7 @@ async function loadData(): Promise<void> {
     failureReports.value = failuresRes.data
     totalItems.value = failuresRes.total
     readiness.value = readinessRes
+    latestImport.value = metricsApi.getLatestUnitImport(filters.value.periodoId)
 
     if (isAdmin.value) {
       await loadWorkbook()
@@ -202,7 +204,9 @@ function goToPage(nextPage: number): void {
 }
 
 function handleUnitImportSuccess(result: UnitResultsImportResponse): void {
-  successMessage.value = `Insumo "${result.fileName}" procesado: ${result.importedRows} registros (${result.highRiskSubjects} materias en riesgo alto).`
+  latestImport.value = result
+  page.value = 1
+  successMessage.value = `Insumo "${result.fileName}" procesado: ${result.importedRows} registros integrados (${result.highRiskSubjects} materias en riesgo alto).`
   void loadData()
 }
 
@@ -229,9 +233,14 @@ async function handleCreateFailure(): Promise<void> {
 
   const total = Number(newFailure.value.totalStudents)
   const failed = Number(newFailure.value.failedStudents)
+  const monthNum = Number(newFailure.value.reportingMonth)
 
   if (!newFailure.value.claveMateria.trim() || !newFailure.value.grupo.trim()) {
     failureFormError.value = 'Captura la clave de materia y el grupo.'
+    return
+  }
+  if (!Number.isInteger(monthNum) || monthNum < 1 || monthNum > 12) {
+    failureFormError.value = 'El mes evaluado debe ser un entero entre 1 y 12.'
     return
   }
   if (!Number.isInteger(total) || total < 1 || !Number.isInteger(failed) || failed < 0 || failed > total) {
@@ -352,6 +361,22 @@ async function handleExportWorkbook(
   }
 }
 
+const router = useRouter()
+
+function openMatrizControlView(): void {
+  void router.push({
+    name: 'metrics-matriz-control',
+    params: { periodoId: String(filters.value.periodoId) },
+  })
+}
+
+function openReporteSemestralView(): void {
+  void router.push({
+    name: 'metrics-reporte-semestral',
+    params: { periodoId: String(filters.value.periodoId) },
+  })
+}
+
 onMounted(() => {
   void loadData()
 })
@@ -363,15 +388,12 @@ onMounted(() => {
     :title="isAdmin ? 'Métricas, Alertas y Reporte Semestral Final' : 'Métricas e Índices de Reprobación'"
     :description="
       isAdmin
-        ? 'Consolidación de coordinación, contraste con Resultados-por-unidad FINAL.xls y cierre al alcanzar el 90% (9 de 10).'
-        : 'Captura mensual de índices de reprobación por materia/grupo y seguimiento de alertas tempranas.'
+        ? 'Consolidación de coordinación, seguimiento de índices de reprobación por unidad (I–VIII) y cierre al alcanzar el 90% (9 de 10).'
+        : 'Captura de índices de reprobación por unidad/materia y seguimiento de alertas tempranas directamente en el sistema.'
     "
   >
     <template #actions>
       <div class="header-actions">
-        <UiButton v-if="isAdmin" variant="secondary" @click="isImportModalOpen = true">
-          Cargar Resultados (.xls)
-        </UiButton>
         <UiButton v-if="!isAdmin" variant="primary" @click="isCreateFailureOpen = true">
           + Capturar Reprobación
         </UiButton>
@@ -405,34 +427,27 @@ onMounted(() => {
 
     <!-- Bloque 2: Libros de Coordinación (solo Admin) -->
     <div v-if="isAdmin" class="metrics-block">
-      <div class="workbook-switcher">
-        <UiButton
-          :variant="activeWorkbookKey === 'ReporteSemestralCoordinador' ? 'primary' : 'secondary'"
-          class="btn-sm"
-          @click="activeWorkbookKey = 'ReporteSemestralCoordinador'"
-        >
-          Reporte Semestral del Coordinador (2 hojas)
-        </UiButton>
-        <UiButton
-          :variant="activeWorkbookKey === 'MatrizControlCoordinacion' ? 'primary' : 'secondary'"
-          class="btn-sm"
-          @click="activeWorkbookKey = 'MatrizControlCoordinacion'"
-        >
-          Matriz de Control de Coordinación (4 hojas)
-        </UiButton>
-      </div>
-
-      <UiAlert v-if="isLoadingWorkbook" tone="info" title="Cargando libro de coordinación..." />
-      <CoordinatorWorkbookPanel
-        v-else-if="activeWorkbook"
-        :workbook="activeWorkbook"
-        @updated="(wb) => (activeWorkbook = wb)"
-        @preview="handlePreviewWorkbook"
-        @export="handleExportWorkbook"
-      />
+      <UiCard
+        title="Libros Oficiales de Coordinación"
+        description="Abre las vistas dedicadas por formato (mapeo exacto de hojas .xlsx, vista previa y exportación)."
+      >
+        <div class="workbook-switcher">
+          <UiButton variant="primary" class="btn-sm" @click="openReporteSemestralView">
+            Reporte Semestral del Coordinador (2 hojas) →
+          </UiButton>
+          <UiButton variant="secondary" class="btn-sm" @click="openMatrizControlView">
+            Matriz de Control de Coordinación (4 hojas) →
+          </UiButton>
+        </div>
+      </UiCard>
     </div>
 
-    <!-- Bloque 3: Filtros de Reprobación -->
+    <!-- Bloque 3: Seguimiento de índices de reprobación por unidad (I a VIII, sin subir archivos) -->
+    <div class="metrics-block">
+      <UnitFailureTrackingPanel :periodo-id="filters.periodoId" />
+    </div>
+
+    <!-- Bloque 4: Filtros de Reprobación -->
     <div class="metrics-block">
       <MetricsFiltersBar v-model="filters" />
     </div>
@@ -459,7 +474,11 @@ onMounted(() => {
     <div class="metrics-block">
       <UiCard
         title="Alertas de Reprobación por Materia y Grupo"
-        description="Seguimiento mensual de índices de reprobación y acciones preventivas"
+        :description="
+          latestImport
+            ? `Último insumo integrado: ${latestImport.fileName} (${latestImport.importedRows} registros · ${latestImport.highRiskSubjects} en riesgo alto)`
+            : 'Seguimiento mensual de índices de reprobación y acciones preventivas'
+        "
         :aria-busy="isLoading"
       >
         <UiAlert v-if="isLoading" tone="info" title="Cargando métricas de reprobación..." />
@@ -518,13 +537,6 @@ onMounted(() => {
         </div>
       </UiCard>
     </div>
-
-    <!-- Modal: Cargar insumo Resultados-por-unidad FINAL.xls (Admin) -->
-    <UnitResultsImportModal
-      v-model="isImportModalOpen"
-      :periodo-id="filters.periodoId"
-      @imported="handleUnitImportSuccess"
-    />
 
     <!-- Modal: Captura Mensual de Reprobación (Tutor) -->
     <UiDialog v-model="isCreateFailureOpen" title="Capturar Reporte de Reprobación" class="capture-dialog">
@@ -716,6 +728,18 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.875rem;
+}
+
+.capture-dialog :deep(input[type='number']) {
+  appearance: textfield;
+  -moz-appearance: textfield;
+  font-variant-numeric: tabular-nums;
+}
+
+.capture-dialog :deep(input[type='number']::-webkit-inner-spin-button),
+.capture-dialog :deep(input[type='number']::-webkit-outer-spin-button) {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .preview-frame {

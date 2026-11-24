@@ -11,6 +11,7 @@ import type {
   PaginatedFailureReports,
   RiskLevel,
   SaveCoordinatorTabPayload,
+  UnitFailureTrackingPayload,
   UnitResultsImportResponse,
   WorkbookPreviewResult,
 } from '../types/metrics'
@@ -18,6 +19,7 @@ import type {
 const MOCK_FAILURES_KEY = 'tecnm_metrics_failures_v1'
 const MOCK_WORKBOOKS_KEY = 'tecnm_metrics_workbooks_v1'
 const MOCK_IMPORTS_KEY = 'tecnm_metrics_unit_imports_v1'
+const MOCK_UNIT_TRACKING_KEY = 'tecnm_metrics_unit_tracking_v1'
 const MOCK_COMPLIANCE_TASKS_KEY = 'tecnm_compliance_tasks_v3'
 
 const BUSINESS_ERROR_STATUSES = new Set([409, 413, 415, 422])
@@ -294,14 +296,16 @@ export const metricsApi = {
       if (filters.month) items = items.filter((f) => f.reportingMonth === filters.month)
       if (filters.riskLevel) items = items.filter((f) => f.riskLevel === filters.riskLevel)
       if (filters.search?.trim()) {
-        const q = filters.search.trim().toLowerCase()
+        const normalizeText = (v: string) =>
+          v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+        const q = normalizeText(filters.search.trim())
         items = items.filter(
           (f) =>
-            f.claveMateria.toLowerCase().includes(q) ||
-            (f.subjectName?.toLowerCase().includes(q) ?? false) ||
-            f.grupo.toLowerCase().includes(q) ||
-            (f.docenteName?.toLowerCase().includes(q) ?? false) ||
-            f.docenteClave.toLowerCase().includes(q),
+            normalizeText(f.claveMateria).includes(q) ||
+            normalizeText(f.subjectName ?? '').includes(q) ||
+            normalizeText(f.grupo).includes(q) ||
+            normalizeText(f.docenteName ?? '').includes(q) ||
+            normalizeText(f.docenteClave).includes(q),
         )
       }
       const total = items.length
@@ -366,18 +370,131 @@ export const metricsApi = {
       return data
     } catch (error) {
       if (shouldRethrowBusinessError(error)) throw error
+      const now = new Date().toISOString()
+      const reportingMonth = periodoId === 2 ? 11 : 5
+      const importedSamples: FailureReportItem[] = [
+        {
+          id: `imp-unit-1-p${periodoId}`,
+          periodoId,
+          docenteClave: 'D0001',
+          docenteName: 'Ing. Carlos Alberto Mendoza Gómez',
+          claveMateria: 'ACF-0902',
+          subjectName: 'Cálculo Integral (Insumo FINAL.xls)',
+          grupo: '2A',
+          reportingMonth,
+          totalStudents: 34,
+          failedStudents: 16,
+          failurePercentage: 47.06,
+          failedUnits: 'II, III, IV',
+          riskLevel: 'Critical',
+          preventiveActions: 'Contraste automático Resultados-por-unidad FINAL.xls — canalizar a asesoría.',
+          requiresIntervention: true,
+          createdAt: now,
+        },
+        {
+          id: `imp-unit-2-p${periodoId}`,
+          periodoId,
+          docenteClave: 'D0002',
+          docenteName: 'M.C. Laura Elena Sánchez Morales',
+          claveMateria: 'AEF-1041',
+          subjectName: 'Matemáticas Discretas (Insumo FINAL.xls)',
+          grupo: '1B',
+          reportingMonth,
+          totalStudents: 32,
+          failedStudents: 11,
+          failurePercentage: 34.38,
+          failedUnits: 'I, III',
+          riskLevel: 'High',
+          preventiveActions: 'Seguimiento grupal e individual por índice > 30%.',
+          requiresIntervention: true,
+          createdAt: now,
+        },
+      ]
+      const existing = getMockFailures().filter(
+        (item) => !importedSamples.some((sample) => sample.id === item.id),
+      )
+      saveJson(MOCK_FAILURES_KEY, [...importedSamples, ...existing])
+
       const result: UnitResultsImportResponse = {
         importId: `imp-${Date.now()}`,
         periodoId,
         fileName: file.name,
-        importedRows: 42,
-        highRiskSubjects: 5,
-        importedAt: new Date().toISOString(),
+        importedRows: importedSamples.length,
+        highRiskSubjects: importedSamples.filter((s) => s.requiresIntervention).length,
+        importedAt: now,
       }
       const history = loadJson<UnitResultsImportResponse[]>(MOCK_IMPORTS_KEY, [])
       history.unshift(result)
       saveJson(MOCK_IMPORTS_KEY, history.slice(0, 10))
       return result
+    }
+  },
+
+  getLatestUnitImport(periodoId: number): UnitResultsImportResponse | null {
+    const history = loadJson<UnitResultsImportResponse[]>(MOCK_IMPORTS_KEY, [])
+    return history.find((h) => h.periodoId === periodoId) ?? null
+  },
+
+  async getUnitFailureTracking(periodoId: number): Promise<UnitFailureTrackingPayload> {
+    try {
+      const { data } = await http.get<UnitFailureTrackingPayload>('/metrics/unit-failure-tracking', {
+        params: { periodoId },
+      })
+      return data
+    } catch (error) {
+      if (shouldRethrowBusinessError(error)) throw error
+      const map = loadJson<Record<string, UnitFailureTrackingPayload>>(MOCK_UNIT_TRACKING_KEY, {})
+      const key = String(periodoId)
+      if (!map[key]) {
+        map[key] = {
+          periodoId,
+          rows: [
+            {
+              id: `ut-1-p${periodoId}`,
+              subjectName: 'Cálculo Diferencial',
+              teacherName: 'Ing. Carlos Alberto Mendoza Gómez',
+              units: ['28.5', '35.0', '31.2', '', '', '', '', ''],
+            },
+            {
+              id: `ut-2-p${periodoId}`,
+              subjectName: 'Estructura de Datos',
+              teacherName: 'M.C. Laura Elena Sánchez Morales',
+              units: ['20.0', '42.0', '48.5', '', '', '', '', ''],
+            },
+            {
+              id: `ut-3-p${periodoId}`,
+              subjectName: 'Taller de Ética',
+              teacherName: 'Dr. Roberto García Villarreal',
+              units: ['10.0', '8.5', '', '', '', '', '', ''],
+            },
+          ],
+          comments: '',
+        }
+        saveJson(MOCK_UNIT_TRACKING_KEY, map)
+      }
+      return map[key]
+    }
+  },
+
+  async saveUnitFailureTracking(
+    payload: UnitFailureTrackingPayload,
+  ): Promise<UnitFailureTrackingPayload> {
+    try {
+      const { data } = await http.put<UnitFailureTrackingPayload>(
+        '/metrics/unit-failure-tracking',
+        payload,
+      )
+      return data
+    } catch (error) {
+      if (shouldRethrowBusinessError(error)) throw error
+      const map = loadJson<Record<string, UnitFailureTrackingPayload>>(MOCK_UNIT_TRACKING_KEY, {})
+      const saved: UnitFailureTrackingPayload = {
+        ...payload,
+        updatedAt: new Date().toISOString(),
+      }
+      map[String(payload.periodoId)] = saved
+      saveJson(MOCK_UNIT_TRACKING_KEY, map)
+      return saved
     }
   },
 
