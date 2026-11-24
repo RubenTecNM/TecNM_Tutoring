@@ -46,13 +46,13 @@ const previewFormat = ref<PreviewFormat>('pdf')
 const previewResult = ref<TemplatePreviewResult | null>(null)
 const previewError = ref('')
 
-const STUDENT_PRESETS = [
-  { value: '', label: 'Capturar manualmente...' },
-  { value: 'Ana Sofía Rodríguez Fuentes', label: 'I21050012 · Ana Sofía Rodríguez Fuentes' },
-  { value: 'Luis Fernando Torres Aguilar', label: 'I22050411 · Luis Fernando Torres Aguilar' },
-  { value: 'Jorge Eduardo Morales Dávila', label: 'I21050330 · Jorge Eduardo Morales Dávila' },
-  { value: 'Mateo Alejandro Garza Silva', label: 'I20050844 · Mateo Alejandro Garza Silva' },
-  { value: 'Mariana Lizeth Cantú Ortiz', label: 'I22050189 · Mariana Lizeth Cantú Ortiz' },
+const STUDENT_PRESETS: { value: string; controlNumber: string; label: string }[] = [
+  { value: '', controlNumber: '', label: 'Capturar manualmente...' },
+  { value: 'Ana Sofía Rodríguez Fuentes', controlNumber: 'I21050012', label: 'I21050012 · Ana Sofía Rodríguez Fuentes' },
+  { value: 'Luis Fernando Torres Aguilar', controlNumber: 'I22050411', label: 'I22050411 · Luis Fernando Torres Aguilar' },
+  { value: 'Jorge Eduardo Morales Dávila', controlNumber: 'I21050330', label: 'I21050330 · Jorge Eduardo Morales Dávila' },
+  { value: 'Mateo Alejandro Garza Silva', controlNumber: 'I20050844', label: 'I20050844 · Mateo Alejandro Garza Silva' },
+  { value: 'Mariana Lizeth Cantú Ortiz', controlNumber: 'I22050189', label: 'I22050189 · Mariana Lizeth Cantú Ortiz' },
 ]
 
 const DEFAULT_SUBJECT_NAMES = [
@@ -76,6 +76,7 @@ function buildDefaultSubjects(): Anexo15SubjectRow[] {
 
 const semester = ref('1er Semestre')
 const studentPreset = ref('')
+const studentControlNumber = ref('')
 const studentName = ref('')
 const subjects = ref<Anexo15SubjectRow[]>(buildDefaultSubjects())
 
@@ -137,10 +138,22 @@ const totalFailedTopics = computed(() =>
 
 function onStudentPresetChange(val: string): void {
   studentPreset.value = val
-  if (val) {
-    studentName.value = val
+  const found = STUDENT_PRESETS.find((p) => p.value === val)
+  if (val && found) {
+    studentName.value = found.value
+    studentControlNumber.value = found.controlNumber
     markDirty()
   }
+}
+
+function onStudentNameInput(val: string): void {
+  studentName.value = val
+  const found = STUDENT_PRESETS.find((p) => p.value === val)
+  studentPreset.value = found ? found.value : ''
+  if (found) {
+    studentControlNumber.value = found.controlNumber
+  }
+  markDirty()
 }
 
 function hydrateForm(loadedTask: DeliverableTask): void {
@@ -149,16 +162,20 @@ function hydrateForm(loadedTask: DeliverableTask): void {
 
   semester.value = saved.semester || String(pre.semestre ?? '1er Semestre')
   studentName.value = saved.studentName || String(pre.alumno_nombre ?? '')
-  studentPreset.value = STUDENT_PRESETS.some((p) => p.value === studentName.value)
-    ? studentName.value
-    : ''
+  const matchedPreset = STUDENT_PRESETS.find((p) => p.value === studentName.value)
+  studentPreset.value = matchedPreset ? matchedPreset.value : ''
+  studentControlNumber.value =
+    saved.studentControlNumber ||
+    String(pre.matricula ?? '') ||
+    matchedPreset?.controlNumber ||
+    ''
 
   if (Array.isArray(saved.subjects) && saved.subjects.length === 7) {
     subjects.value = saved.subjects.map((row, idx) => ({
       rowNumber: idx + 1,
-      subjectName: row.subjectName ?? '',
-      topics: Array.from({ length: 8 }, (_, tIdx) => String(row.topics?.[tIdx] ?? '')),
-      observations: row.observations ?? '',
+      subjectName: toText(row.subjectName),
+      topics: Array.from({ length: 8 }, (_, tIdx) => toText(row.topics?.[tIdx])),
+      observations: toText(row.observations),
     }))
   } else {
     subjects.value = buildDefaultSubjects()
@@ -169,8 +186,9 @@ function hydrateForm(loadedTask: DeliverableTask): void {
 
 function buildPayload(): Anexo15Payload {
   return {
-    semester: semester.value.trim(),
-    studentName: studentName.value.trim(),
+    semester: toText(semester.value),
+    studentControlNumber: toText(studentControlNumber.value) || undefined,
+    studentName: toText(studentName.value),
     passingGrade: PASSING_GRADE,
     subjects: subjects.value.map((row, idx) => ({
       rowNumber: idx + 1,
@@ -192,11 +210,11 @@ function validateForm(strictSubmit: boolean): string | null {
 
   if (!strictSubmit) return null
 
-  if (!semester.value.trim() || !studentName.value.trim()) {
+  if (!toText(semester.value) || !toText(studentName.value)) {
     return 'Completa Semestre y Nombre del estudiante antes de entregar.'
   }
 
-  const hasAtLeastOneSubject = subjects.value.some((r) => r.subjectName.trim().length > 0)
+  const hasAtLeastOneSubject = subjects.value.some((r) => toText(r.subjectName).length > 0)
   if (!hasAtLeastOneSubject) {
     return 'Registra al menos una asignatura en la tabla.'
   }
@@ -427,11 +445,11 @@ onMounted(() => {
               @update:model-value="onStudentPresetChange"
             />
             <UiField
-              v-model="studentName"
+              :model-value="studentName"
               label="Nombre del estudiante *"
               placeholder="Nombre completo y apellidos"
               :disabled="isReadOnly"
-              @update:model-value="markDirty"
+              @update:model-value="onStudentNameInput"
             />
           </div>
         </UiCard>
@@ -582,6 +600,14 @@ onMounted(() => {
               </tr>
             </tbody>
           </table>
+          <div class="docx-instructions">
+            <p>
+              <strong>INSTRUCCIONES:</strong> En la primera columna anotas las asignaturas que estás cursando; en las casillas de temas, las calificaciones obtenidas en cada tema evaluado para detectar focos de alerta (&gt; 1 tema reprobado).
+            </p>
+            <p>
+              Calificaciones reprobatorias (&lt; {{ PASSING_GRADE }}) resaltadas en tinta roja. En caso de requerir apoyo, acude a tu tutor o Coordinador de Tutorías del Departamento Académico.
+            </p>
+          </div>
         </div>
 
         <div class="dialog-actions">
@@ -809,6 +835,17 @@ onMounted(() => {
   color: #dc2626;
   font-weight: 700;
   background-color: #fef2f2;
+}
+
+.docx-instructions {
+  margin-top: 0.875rem;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: #334155;
+}
+
+.docx-instructions p {
+  margin: 0.3rem 0;
 }
 
 .dialog-actions {

@@ -345,6 +345,27 @@ async function openTaskForm(task: DeliverableTask): Promise<void> {
     })
     return
   }
+  if (task.formatKey === 'Anexo19AMensual') {
+    await router.push({
+      name: 'compliance-anexo-19a',
+      params: { deliverableId: task.id },
+    })
+    return
+  }
+  if (task.formatKey === 'SeguimientoMensual') {
+    await router.push({
+      name: 'compliance-seguimiento-mensual',
+      params: { deliverableId: task.id },
+    })
+    return
+  }
+  if (task.formatKey === 'SeguimientoFinal') {
+    await router.push({
+      name: 'compliance-seguimiento-final',
+      params: { deliverableId: task.id },
+    })
+    return
+  }
 
   isFormModalOpen.value = true
   isLoadingForm.value = true

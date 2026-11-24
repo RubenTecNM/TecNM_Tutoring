@@ -180,3 +180,44 @@ export interface Anexo15Payload {
   passingGrade: number
   subjects: Anexo15SubjectRow[]
 }
+
+export interface Anexo19AStudentRow {
+  listNumber: number
+  studentName: string
+  groupTutoringCount: string
+  individualTutoringCount: string
+  referredCount: string
+  referredArea: string
+}
+
+export interface Anexo19APayload {
+  instituteName: string
+  tutorName: string
+  reportDate: string
+  educationalProgram: string
+  groupName: string
+  scheduleHour: string
+  students: Anexo19AStudentRow[]
+  observations: string
+  deliveryDate: string
+  tutorSignatureConfirmed: boolean
+  tutorSignedAt?: string
+  signatureMode: PlanTrabajoSignatureMode
+  signatureDataUrl?: string
+  coordinatorName: string
+  departmentHeadName: string
+}
+
+export type SeguimientoMensualTabKey =
+  | 'anexo_14_trayectoria_academica'
+  | 'anexo_15_desempeno_acad'
+  | 'seguimiento_ind_reprob'
+  | 'anexo_19a_mensual_tutor'
+  | 'seguimiento_individual'
+  | 'lista_asistencia'
+
+export type SeguimientoFinalTabKey =
+  | 'anexo_19_reporte_semestral'
+  | 'informe_final_tutores'
+  | 'resultados_indice_reprob'
+  | 'caracteristicas_gpo'

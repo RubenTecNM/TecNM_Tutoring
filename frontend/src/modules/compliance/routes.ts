@@ -46,4 +46,31 @@ export const complianceRoutes: RouteRecordRaw[] = [
       title: 'Anexo 15 — Desempeño Académico',
     },
   },
+  {
+    path: '/compliance/anexo-19a/:deliverableId',
+    name: 'compliance-anexo-19a',
+    component: () => import('./views/Anexo19AView.vue'),
+    meta: {
+      requiresAuth: true,
+      title: 'Anexo 19-A — Reporte Mensual del Tutor',
+    },
+  },
+  {
+    path: '/compliance/seguimiento-mensual/:deliverableId',
+    name: 'compliance-seguimiento-mensual',
+    component: () => import('./views/SeguimientoMensualView.vue'),
+    meta: {
+      requiresAuth: true,
+      title: 'Seguimiento Mensual (6 hojas)',
+    },
+  },
+  {
+    path: '/compliance/seguimiento-final/:deliverableId',
+    name: 'compliance-seguimiento-final',
+    component: () => import('./views/SeguimientoFinalView.vue'),
+    meta: {
+      requiresAuth: true,
+      title: 'Seguimiento Final (4 hojas)',
+    },
+  },
 ]
