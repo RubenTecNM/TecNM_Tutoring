@@ -1,4 +1,6 @@
 import { http } from '../../../shared/api/http'
+import { shouldFallbackToLocal } from '../../../shared/api/apiFallback'
+import { getCurrentAcademicPeriod } from '../../../shared/utils/academicPeriod'
 import type {
   CreateReferralRequest,
   Referral,
@@ -103,11 +105,13 @@ function normalizeText(text: string): string {
     .trim()
 }
 
+const ACTIVE_PERIOD_ID = getCurrentAcademicPeriod().id
+
 // Sin datos demo para usuario (D0001) ni usuario2 (D0002): inician limpios.
 const DEFAULT_MOCK_REFERRALS: Referral[] = [
   {
     id: 'ref-006',
-    periodoId: 1,
+    periodoId: ACTIVE_PERIOD_ID,
     matricula: 'I22050411',
     studentName: 'Luis Fernando Torres Aguilar',
     studentCareer: 'Ingeniería Electrónica',
@@ -124,7 +128,7 @@ const DEFAULT_MOCK_REFERRALS: Referral[] = [
   },
   {
     id: 'ref-004',
-    periodoId: 1,
+    periodoId: ACTIVE_PERIOD_ID,
     matricula: 'I21050330',
     studentName: 'Jorge Eduardo Morales Dávila',
     studentCareer: 'Ingeniería Mecánica',
@@ -173,7 +177,8 @@ export const referralsApi = {
     try {
       const { data } = await http.get<StudentPreview>(`/students/${clean}`)
       return data
-    } catch {
+    } catch (error) {
+      if (!shouldFallbackToLocal(error)) throw error
       if (STUDENT_CATALOG_MOCK[clean]) {
         return STUDENT_CATALOG_MOCK[clean]
       }
@@ -193,7 +198,8 @@ export const referralsApi = {
     try {
       const { data } = await http.get<TeacherDirectoryItem[]>(`/teachers?q=${encodeURIComponent(query)}`)
       return data
-    } catch {
+    } catch (error) {
+      if (!shouldFallbackToLocal(error)) throw error
       if (!clean) return TEACHER_DIRECTORY_MOCK.slice(0, 8)
 
       // Priorizar docentes cuyo primer nombre o cualquier palabra del nombre empiece por la búsqueda
@@ -230,7 +236,8 @@ export const referralsApi = {
 
       const { data } = await http.get<Referral[]>(`/referrals?${params.toString()}`)
       return data.filter((r) => !r.isDeleted)
-    } catch {
+    } catch (error) {
+      if (!shouldFallbackToLocal(error)) throw error
       let mock = loadMockReferrals().filter((r) => !r.isDeleted)
       if (filters?.periodoId) {
         mock = mock.filter((r) => r.periodoId === filters.periodoId)
@@ -250,7 +257,8 @@ export const referralsApi = {
     try {
       const { data } = await http.post<Referral>('/referrals', payload)
       return data
-    } catch {
+    } catch (error) {
+      if (!shouldFallbackToLocal(error)) throw error
       const cleanMatricula = payload.matricula.trim().toUpperCase()
       const studentInfo = STUDENT_CATALOG_MOCK[cleanMatricula]
       const tutorClave = resolveTutorClave(currentUser?.username) || 'D0001'
@@ -284,7 +292,8 @@ export const referralsApi = {
     try {
       const { data } = await http.put<Referral>(`/referrals/${referralId}`, payload)
       return data
-    } catch {
+    } catch (error) {
+      if (!shouldFallbackToLocal(error)) throw error
       const existing = loadMockReferrals()
       const idx = existing.findIndex((r) => r.id === referralId)
       if (idx === -1) return null
@@ -313,7 +322,8 @@ export const referralsApi = {
   async cancelReferral(referralId: string): Promise<void> {
     try {
       await http.delete(`/referrals/${referralId}`)
-    } catch {
+    } catch (error) {
+      if (!shouldFallbackToLocal(error)) throw error
       // Soft-delete (nunca borrado físico)
       const existing = loadMockReferrals()
       const idx = existing.findIndex((r) => r.id === referralId)
@@ -334,7 +344,8 @@ export const referralsApi = {
   ): Promise<void> {
     try {
       await http.patch(`/referrals/${referralId}/status`, payload)
-    } catch {
+    } catch (error) {
+      if (!shouldFallbackToLocal(error)) throw error
       const existing = loadMockReferrals()
       const idx = existing.findIndex((r) => r.id === referralId)
       if (idx !== -1) {

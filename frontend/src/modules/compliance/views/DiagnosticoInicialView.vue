@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useUnsavedChangesGuard } from '../../../shared/composables/useUnsavedChangesGuard'
 import {
   UiAlert,
   UiBadge,
@@ -12,6 +13,8 @@ import {
   UiText,
 } from '../../../shared/components'
 import { normalizeApiError } from '../../../shared/api/apiErrors'
+import { sanitizePreviewUrl } from '../../../shared/utils/safePreviewUrl'
+import { getCurrentAcademicPeriod, getPeriodLabel } from '../../../shared/utils/academicPeriod'
 import { me } from '../../auth/api/authApi'
 import type { UserResponse } from '../../auth/types/auth'
 import { complianceApi } from '../api/complianceApi'
@@ -55,7 +58,7 @@ const tutorName = ref('')
 const reportDate = ref(new Date().toISOString().slice(0, 10))
 const groupName = ref('1°A')
 const shift = ref<'Matutino' | 'Vespertino'>('Matutino')
-const periodLabel = ref('Enero - Junio 2026')
+const periodLabel = ref(getCurrentAcademicPeriod().label)
 const totalReceivedInput = ref('0')
 const droppedOutInput = ref('0')
 const dropoutReasons = ref('')
@@ -87,8 +90,7 @@ function markDirty(): void {
 function hydrateForm(loadedTask: DeliverableTask, user: UserResponse | null): void {
   const pre = loadedTask.prefilledData ?? {}
   const saved = (loadedTask.formPayload ?? {}) as Partial<DiagnosticoInicialPayload>
-  const defaultPeriod =
-    loadedTask.periodoId === 2 ? 'Agosto - Diciembre 2026' : 'Enero - Junio 2026'
+  const defaultPeriod = getPeriodLabel(loadedTask.periodoId)
 
   tutorName.value =
     saved.tutorName || String(pre.docente_nombre ?? '') || user?.name || 'Docente Tutor'
@@ -284,10 +286,7 @@ function goBack(): void {
   void router.push({ name: 'compliance-dashboard' })
 }
 
-onBeforeRouteLeave(() => {
-  if (!isDirty.value) return true
-  return window.confirm('Hay cambios sin guardar en el Diagnóstico Inicial. ¿Deseas salir?')
-})
+useUnsavedChangesGuard(isDirty, 'Hay cambios sin guardar en el Diagnóstico Inicial. ¿Deseas salir?')
 
 onMounted(() => {
   void loadDiagnostico()
@@ -553,8 +552,9 @@ onMounted(() => {
         <UiAlert v-if="isPreviewing" tone="info" title="Generando vista previa..." />
 
         <iframe
-          v-else-if="previewResult?.previewUrlOrContent"
-          :src="previewResult.previewUrlOrContent"
+          v-else-if="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          :src="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          sandbox="allow-same-origin"
           class="preview-frame"
           title="Vista previa Diagnóstico Inicial"
         />
@@ -824,5 +824,17 @@ onMounted(() => {
 .btn-sm {
   padding: 0.3rem 0.7rem;
   font-size: 0.8125rem;
+}
+
+:deep(input[type='number']) {
+  appearance: textfield;
+  -moz-appearance: textfield;
+  font-variant-numeric: tabular-nums;
+}
+
+:deep(input[type='number']::-webkit-inner-spin-button),
+:deep(input[type='number']::-webkit-outer-spin-button) {
+  -webkit-appearance: none;
+  margin: 0;
 }
 </style>

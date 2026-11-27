@@ -11,6 +11,7 @@ import {
   UiText,
 } from '../../../shared/components'
 import { me } from '../../auth/api/authApi'
+import { getCurrentAcademicPeriod } from '../../../shared/utils/academicPeriod'
 import type { UserResponse } from '../../auth/types/auth'
 import { referralsApi, resolveTutorClave } from '../api/referralsApi'
 import {
@@ -61,7 +62,7 @@ const editStatus = ref<ReferralStatus>('Read')
 const editCoordinatorNotes = ref('')
 
 const filters = ref<ReferralFilters>({
-  periodoId: 1,
+  periodoId: getCurrentAcademicPeriod().id,
   supportArea: undefined,
   referralReason: undefined,
   status: undefined,

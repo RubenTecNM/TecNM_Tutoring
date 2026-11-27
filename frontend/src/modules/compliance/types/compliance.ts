@@ -69,6 +69,30 @@ export interface DocenteComplianceSummary {
   deliverables?: DeliverableTask[]
 }
 
+export interface FormatComplianceOverview {
+  formatKey: FormatKey
+  title: string
+  templateFileName: string
+  extension: 'docx' | 'xlsx'
+  hasTabs: boolean
+  tabsCount: number
+  description: string
+  totalTutors: number
+  updatedCount: number
+  deliveredCount: number
+  pendingCount: number
+  latestUpdateAt?: string
+}
+
+export interface FormatTutorEntry {
+  docenteClave: string
+  docenteName: string
+  task: DeliverableTask
+  hasUpdates: boolean
+  updatedAt?: string
+  updatedSummary: string
+}
+
 export interface ComplianceFilters {
   periodoId: number
   month?: number

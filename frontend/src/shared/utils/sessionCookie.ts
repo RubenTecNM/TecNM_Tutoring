@@ -25,5 +25,9 @@ export function hasActiveSession(nowSeconds = Date.now() / 1000): boolean {
 }
 
 export function clearSessionMarker(): void {
-  document.cookie = `${SESSION_COOKIE_NAME}=; Max-Age=0; Path=/; SameSite=Lax; Secure`
+  const secureFlag =
+    typeof window !== 'undefined' && window.location.protocol === 'https:'
+      ? '; Secure'
+      : ''
+  document.cookie = `${SESSION_COOKIE_NAME}=; Max-Age=0; Path=/; SameSite=Lax${secureFlag}`
 }

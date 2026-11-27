@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { UiButton, UiCard, UiField } from '../../../shared/components'
+import {
+  getAvailableAcademicPeriods,
+  getCurrentAcademicPeriod,
+} from '../../../shared/utils/academicPeriod'
 import type { ReferralFilters, ReferralReason, ReferralStatus, SupportArea } from '../types/referrals'
 
 const props = withDefaults(
@@ -10,10 +14,7 @@ const props = withDefaults(
     isAdmin?: boolean
   }>(),
   {
-    availablePeriodos: () => [
-      { id: 1, label: 'Ene - Jun 2026' },
-      { id: 2, label: 'Ago - Dic 2026' },
-    ],
+    availablePeriodos: () => getAvailableAcademicPeriods(),
     isAdmin: false,
   },
 )
@@ -59,7 +60,7 @@ const statusOptions = [
 function onPeriodoChange(val: string) {
   emit('update:modelValue', {
     ...props.modelValue,
-    periodoId: Number(val) || 1,
+    periodoId: Number(val) || getCurrentAcademicPeriod().id,
   })
 }
 

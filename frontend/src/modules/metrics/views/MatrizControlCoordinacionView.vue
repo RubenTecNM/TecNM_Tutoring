@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useUnsavedChangesGuard } from '../../../shared/composables/useUnsavedChangesGuard'
+import {
+  getDefaultMonthLabelForPeriodo,
+  getPeriodLabel,
+  resolveAcademicPeriodById,
+} from '../../../shared/utils/academicPeriod'
+import { sanitizePreviewUrl } from '../../../shared/utils/safePreviewUrl'
 import {
   UiAlert,
   UiBadge,
@@ -117,17 +124,18 @@ const previewFormat = ref<PreviewFormat>('pdf')
 const previewResult = ref<WorkbookPreviewResult | null>(null)
 const previewError = ref('')
 
-const periodoId = computed(() => {
-  const raw = Number(route.params.periodoId ?? route.query.periodoId ?? 1)
-  return raw === 2 ? 2 : 1
-})
+const periodoId = computed(() =>
+  resolveAcademicPeriodById(
+    (route.params.periodoId ?? route.query.periodoId) as string | undefined,
+  ).id,
+)
 
 // Encabezado compartido
 const header = ref({
   campus: 'TecNM Campus Monclova',
   coordinatorName: '',
-  periodLabel: 'Enero - Junio 2026',
-  reviewMonth: 'Mayo 2026',
+  periodLabel: getPeriodLabel(periodoId.value),
+  reviewMonth: `${getDefaultMonthLabelForPeriodo(periodoId.value)} ${resolveAcademicPeriodById(periodoId.value).year}`,
 })
 
 // Datos iniciales por pestaña (basados en tutores a-d 2026.xlsx)
@@ -366,7 +374,9 @@ const quintoSeptimoRows = ref<SemestreControlRow[]>([
 
 const tabNotes = ref('')
 
-const isReadOnly = computed(() => workbook.value?.status === 'Finalized')
+const isReadOnly = computed(
+  () => workbook.value?.status === 'Finalized' || currentUser.value?.role !== 'Admin',
+)
 const activeTabMeta = computed(() => TABS.find((t) => t.tabKey === activeTabKey.value) ?? TABS[0])
 const activeWorkbookTab = computed(() =>
   workbook.value?.tabs.find((t) => t.tabKey === activeTabKey.value),
@@ -516,14 +526,13 @@ async function loadWorkbook(): Promise<void> {
     )
     workbook.value = loaded
     const pre = (loaded.tabs[0]?.prefilledData ?? {}) as Record<string, unknown>
+    const periodInfo = resolveAcademicPeriodById(periodoId.value)
     header.value = {
       campus: String(pre.plantel ?? 'TecNM Campus Monclova'),
       coordinatorName: String(pre.coordinador ?? currentUser.value?.name ?? 'Coordinación de Tutorías'),
-      periodLabel: String(
-        pre.periodo ?? (periodoId.value === 2 ? 'Agosto - Diciembre 2026' : 'Enero - Junio 2026'),
-      ),
+      periodLabel: String(pre.periodo ?? periodInfo.label),
       reviewMonth: String(
-        pre.mes_revision ?? (periodoId.value === 2 ? 'Noviembre 2026' : 'Mayo 2026'),
+        pre.mes_revision ?? `${getDefaultMonthLabelForPeriodo(periodInfo.id)} ${periodInfo.year}`,
       ),
     }
     hydrateTab(loaded, activeTabKey.value)
@@ -694,10 +703,7 @@ function goBack(): void {
   void router.push({ name: 'metrics-dashboard' })
 }
 
-onBeforeRouteLeave(() => {
-  if (!isTabDirty.value) return true
-  return window.confirm('Hay cambios sin guardar en la pestaña actual. ¿Deseas salir?')
-})
+useUnsavedChangesGuard(isTabDirty)
 
 onMounted(() => {
   void loadWorkbook()
@@ -985,7 +991,13 @@ onMounted(() => {
         </div>
         <UiAlert v-if="previewError" tone="danger" title="Aviso"><UiText>{{ previewError }}</UiText></UiAlert>
         <UiAlert v-if="isPreviewing" tone="info" title="Generando vista previa..." />
-        <iframe v-else-if="previewResult?.previewUrlOrContent" :src="previewResult.previewUrlOrContent" class="preview-frame" title="Vista previa coordinación" />
+        <iframe
+          v-else-if="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          :src="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          sandbox="allow-same-origin"
+          class="preview-frame"
+          title="Vista previa coordinación"
+        />
         <pre v-else class="payload-preview">{{ JSON.stringify(getTabPayload(activeTabKey), null, 2) }}</pre>
         <div class="dialog-actions">
           <UiButton variant="secondary" @click="isPreviewOpen = false">Cerrar</UiButton>

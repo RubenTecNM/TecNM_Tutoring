@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useUnsavedChangesGuard } from '../../../shared/composables/useUnsavedChangesGuard'
+import { sanitizePreviewUrl } from '../../../shared/utils/safePreviewUrl'
+import {
+  getCurrentAcademicPeriod,
+  getDefaultMonthLabelForPeriodo,
+  getPeriodLabel,
+} from '../../../shared/utils/academicPeriod'
 import {
   UiAlert,
   UiBadge,
@@ -109,8 +116,8 @@ const previewError = ref('')
 // Encabezado compartido del libro
 const header = ref({
   tutorName: '',
-  periodLabel: 'Enero - Junio 2026',
-  monthLabel: 'Mayo',
+  periodLabel: getCurrentAcademicPeriod().label,
+  monthLabel: getDefaultMonthLabelForPeriodo(getCurrentAcademicPeriod().id),
   groupName: '1°A',
   career: 'Ingeniería en Sistemas Computacionales',
   shift: 'Matutino',
@@ -365,8 +372,8 @@ async function loadWorkbook(): Promise<void> {
     const pre = loaded.prefilledData ?? {}
     header.value = {
       tutorName: String(pre.docente_nombre ?? currentUser.value?.name ?? 'Docente Tutor'),
-      periodLabel: loaded.periodoId === 2 ? 'Agosto - Diciembre 2026' : 'Enero - Junio 2026',
-      monthLabel: loaded.periodoId === 2 ? 'Noviembre' : 'Mayo',
+      periodLabel: getPeriodLabel(loaded.periodoId),
+      monthLabel: getDefaultMonthLabelForPeriodo(loaded.periodoId),
       groupName: String(pre.grupo ?? '1°A'),
       career: String(pre.carrera ?? 'Ingeniería en Sistemas Computacionales'),
       shift: String(pre.turno ?? 'Matutino'),
@@ -583,10 +590,7 @@ function goBack(): void {
   void router.push({ name: 'compliance-dashboard' })
 }
 
-onBeforeRouteLeave(() => {
-  if (!isTabDirty.value) return true
-  return window.confirm('Hay cambios sin guardar en la pestaña actual. ¿Deseas salir?')
-})
+useUnsavedChangesGuard(isTabDirty)
 
 onMounted(() => {
   void loadWorkbook()
@@ -612,7 +616,7 @@ onMounted(() => {
           Guardar pestaña
         </UiButton>
         <UiButton v-if="!isReadOnly" variant="primary" :loading="isSaving" :disabled="isLoading" @click="handleSaveTab(true)">
-          Entregar libro mensual
+          {{ task?.status === 'Pending' ? 'Entregar libro mensual' : 'Actualizar entrega' }}
         </UiButton>
       </div>
     </template>
@@ -663,7 +667,8 @@ onMounted(() => {
               @click="switchTab(tab.tabKey)"
             >
               <span>{{ tab.label }}</span>
-              <span v-if="completedTabs.has(tab.tabKey)" aria-label="Guardada">✓</span>
+              <span v-if="tab.tabKey === activeTabKey && isTabDirty" class="tab-dirty-dot" aria-label="Cambios sin guardar">●</span>
+              <span v-else-if="completedTabs.has(tab.tabKey)" aria-label="Guardada">✓</span>
             </button>
           </div>
 
@@ -764,6 +769,7 @@ onMounted(() => {
                     <th class="col-num-cell">% Reprob.</th>
                     <th>Unidades</th>
                     <th>Acción preventiva</th>
+                    <th v-if="!isReadOnly" class="col-action" aria-label="Acciones" />
                   </tr>
                 </thead>
                 <tbody>
@@ -779,6 +785,18 @@ onMounted(() => {
                     </td>
                     <td><input :value="row.failedUnits" type="text" class="cell-input" placeholder="I, II" :disabled="isReadOnly" @input="updateStringField(row, 'failedUnits', $event)" /></td>
                     <td><input :value="row.preventiveAction" type="text" class="cell-input" :disabled="isReadOnly" @input="updateStringField(row, 'preventiveAction', $event)" /></td>
+                    <td v-if="!isReadOnly" class="col-action">
+                      <button
+                        type="button"
+                        class="remove-row-btn"
+                        :disabled="tabReprobRows.length <= 1"
+                        aria-label="Eliminar fila"
+                        title="Eliminar fila"
+                        @click="tabReprobRows.splice(idx, 1); markDirty()"
+                      >
+                        ×
+                      </button>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -838,6 +856,7 @@ onMounted(() => {
                     <th>Motivo / Problemática</th>
                     <th>Acuerdos / Seguimiento</th>
                     <th>Canalizado</th>
+                    <th v-if="!isReadOnly" class="col-action" aria-label="Acciones" />
                   </tr>
                 </thead>
                 <tbody>
@@ -848,6 +867,18 @@ onMounted(() => {
                     <td><input :value="row.reason" type="text" class="cell-input" :disabled="isReadOnly" @input="updateStringField(row, 'reason', $event)" /></td>
                     <td><input :value="row.agreements" type="text" class="cell-input" :disabled="isReadOnly" @input="updateStringField(row, 'agreements', $event)" /></td>
                     <td class="col-num"><input v-model="row.referred" type="checkbox" :disabled="isReadOnly" @change="markDirty" /></td>
+                    <td v-if="!isReadOnly" class="col-action">
+                      <button
+                        type="button"
+                        class="remove-row-btn"
+                        :disabled="tabIndividualRows.length <= 1"
+                        aria-label="Eliminar sesión"
+                        title="Eliminar sesión"
+                        @click="tabIndividualRows.splice(idx, 1); markDirty()"
+                      >
+                        ×
+                      </button>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -949,7 +980,13 @@ onMounted(() => {
         </div>
         <UiAlert v-if="previewError" tone="danger" title="Aviso"><UiText>{{ previewError }}</UiText></UiAlert>
         <UiAlert v-if="isPreviewing" tone="info" title="Generando vista previa..." />
-        <iframe v-else-if="previewResult?.previewUrlOrContent" :src="previewResult.previewUrlOrContent" class="preview-frame" title="Vista previa mensual" />
+        <iframe
+          v-else-if="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          :src="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          sandbox="allow-same-origin"
+          class="preview-frame"
+          title="Vista previa mensual"
+        />
         <pre v-else class="payload-preview">{{ JSON.stringify(getTabPayload(activeTabKey), null, 2) }}</pre>
         <div class="dialog-actions">
           <UiButton variant="secondary" @click="isPreviewOpen = false">Cerrar</UiButton>
@@ -999,4 +1036,10 @@ onMounted(() => {
 .preview-frame { width: 100%; height: 460px; border: 1px solid var(--color-border, #e2e8f0); border-radius: 6px; }
 .payload-preview { margin: 0; padding: 0.75rem; max-height: 360px; overflow: auto; font-size: 0.76rem; background: var(--color-bg-light, #f8fafc); border: 1px solid var(--color-border, #e2e8f0); border-radius: 6px; }
 .btn-sm { padding: 0.3rem 0.7rem; font-size: 0.8125rem; width: fit-content; }
+.tab-dirty-dot { color: #f59e0b; font-size: 0.7rem; }
+.col-action { width: 40px; text-align: center; }
+.remove-row-btn { width: 28px; height: 28px; padding: 0; border: 1px solid var(--color-border, #e2e8f0); border-radius: 4px; background: transparent; color: var(--color-text-secondary, #64748b); font-size: 1rem; line-height: 1; cursor: pointer; }
+.remove-row-btn:hover:not(:disabled) { color: var(--color-danger-strong, #dc2626); border-color: var(--color-danger, #ef4444); background: var(--color-danger-bg, #fef2f2); }
+.remove-row-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+@media (max-width: 640px) { .top-actions { width: 100%; } .top-actions :deep(button) { flex: 1 1 auto; } }
 </style>

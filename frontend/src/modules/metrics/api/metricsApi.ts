@@ -1,4 +1,6 @@
 import { http } from '../../../shared/api/http'
+import { shouldFallbackToLocal } from '../../../shared/api/apiFallback'
+import { getCurrentAcademicPeriod, isSecondTerm } from '../../../shared/utils/academicPeriod'
 import type { PreviewFormat } from '../../compliance/types/compliance'
 import type {
   CoordinatorFormatKey,
@@ -22,11 +24,8 @@ const MOCK_IMPORTS_KEY = 'tecnm_metrics_unit_imports_v1'
 const MOCK_UNIT_TRACKING_KEY = 'tecnm_metrics_unit_tracking_v1'
 const MOCK_COMPLIANCE_TASKS_KEY = 'tecnm_compliance_tasks_v3'
 
-const BUSINESS_ERROR_STATUSES = new Set([409, 413, 415, 422])
-
 function shouldRethrowBusinessError(error: unknown): boolean {
-  const status = (error as { response?: { status?: number } })?.response?.status
-  return status !== undefined && BUSINESS_ERROR_STATUSES.has(status)
+  return !shouldFallbackToLocal(error)
 }
 
 function computeRiskLevel(percentage: number): RiskLevel {
@@ -36,16 +35,18 @@ function computeRiskLevel(percentage: number): RiskLevel {
   return 'Low'
 }
 
+const DEFAULT_ACTIVE_PERIOD_ID = getCurrentAcademicPeriod().id
+
 const DEFAULT_FAILURES: FailureReportItem[] = [
   {
     id: 'fail-001',
-    periodoId: 1,
+    periodoId: DEFAULT_ACTIVE_PERIOD_ID,
     docenteClave: 'D0001',
     docenteName: 'Ing. Carlos Alberto Mendoza Gómez',
     claveMateria: 'ACF-0901',
     subjectName: 'Cálculo Diferencial',
     grupo: '1A',
-    reportingMonth: 3,
+    reportingMonth: isSecondTerm(DEFAULT_ACTIVE_PERIOD_ID) ? 10 : 3,
     totalStudents: 35,
     failedStudents: 14,
     failurePercentage: 40,
@@ -57,13 +58,13 @@ const DEFAULT_FAILURES: FailureReportItem[] = [
   },
   {
     id: 'fail-002',
-    periodoId: 1,
+    periodoId: DEFAULT_ACTIVE_PERIOD_ID,
     docenteClave: 'D0002',
     docenteName: 'M.C. Laura Elena Sánchez Morales',
     claveMateria: 'AED-1026',
     subjectName: 'Estructura de Datos',
     grupo: '3B',
-    reportingMonth: 3,
+    reportingMonth: isSecondTerm(DEFAULT_ACTIVE_PERIOD_ID) ? 10 : 3,
     totalStudents: 30,
     failedStudents: 15,
     failurePercentage: 50,
@@ -75,13 +76,13 @@ const DEFAULT_FAILURES: FailureReportItem[] = [
   },
   {
     id: 'fail-003',
-    periodoId: 1,
+    periodoId: DEFAULT_ACTIVE_PERIOD_ID,
     docenteClave: 'D0003',
     docenteName: 'Dr. Roberto García Villarreal',
     claveMateria: 'ACA-0907',
     subjectName: 'Taller de Ética',
     grupo: '1C',
-    reportingMonth: 2,
+    reportingMonth: isSecondTerm(DEFAULT_ACTIVE_PERIOD_ID) ? 9 : 2,
     totalStudents: 40,
     failedStudents: 4,
     failurePercentage: 10,
@@ -371,7 +372,7 @@ export const metricsApi = {
     } catch (error) {
       if (shouldRethrowBusinessError(error)) throw error
       const now = new Date().toISOString()
-      const reportingMonth = periodoId === 2 ? 11 : 5
+      const reportingMonth = isSecondTerm(periodoId) ? 11 : 5
       const importedSamples: FailureReportItem[] = [
         {
           id: `imp-unit-1-p${periodoId}`,

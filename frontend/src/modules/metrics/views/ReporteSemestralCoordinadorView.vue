@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useUnsavedChangesGuard } from '../../../shared/composables/useUnsavedChangesGuard'
+import { resolveAcademicPeriodById } from '../../../shared/utils/academicPeriod'
+import { sanitizePreviewUrl } from '../../../shared/utils/safePreviewUrl'
 import {
   UiAlert,
   UiBadge,
@@ -126,10 +129,11 @@ const previewFormat = ref<PreviewFormat>('pdf')
 const previewResult = ref<WorkbookPreviewResult | null>(null)
 const previewError = ref('')
 
-const periodoId = computed(() => {
-  const raw = Number(route.params.periodoId ?? route.query.periodoId ?? 1)
-  return raw === 2 ? 2 : 1
-})
+const periodoId = computed(() =>
+  resolveAcademicPeriodById(
+    (route.params.periodoId ?? route.query.periodoId) as string | undefined,
+  ).id,
+)
 
 // Encabezado compartido
 const header = ref({
@@ -701,10 +705,7 @@ function goBack(): void {
   void router.push({ name: 'metrics-dashboard' })
 }
 
-onBeforeRouteLeave(() => {
-  if (!isTabDirty.value) return true
-  return window.confirm('Hay cambios sin guardar en la pestaña actual. ¿Deseas salir?')
-})
+useUnsavedChangesGuard(isTabDirty)
 
 onMounted(() => {
   void loadWorkbook()
@@ -1058,7 +1059,13 @@ onMounted(() => {
         </div>
         <UiAlert v-if="previewError" tone="danger" title="Aviso"><UiText>{{ previewError }}</UiText></UiAlert>
         <UiAlert v-if="isPreviewing" tone="info" title="Generando vista previa..." />
-        <iframe v-else-if="previewResult?.previewUrlOrContent" :src="previewResult.previewUrlOrContent" class="preview-frame" title="Vista previa reporte semestral" />
+        <iframe
+          v-else-if="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          :src="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          sandbox="allow-same-origin"
+          class="preview-frame"
+          title="Vista previa reporte semestral"
+        />
         <pre v-else class="payload-preview">{{ JSON.stringify(getTabPayload(activeTabKey), null, 2) }}</pre>
         <div class="dialog-actions">
           <UiButton variant="secondary" @click="isPreviewOpen = false">Cerrar</UiButton>

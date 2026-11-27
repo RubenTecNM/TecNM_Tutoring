@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { UiButton, UiCard, UiField } from '../../../shared/components'
+import {
+  getAvailableAcademicPeriods,
+  getCurrentAcademicPeriod,
+  getMonthOptionsForPeriodo,
+} from '../../../shared/utils/academicPeriod'
 import type { MetricsFilters, RiskLevel } from '../types/metrics'
 
 const props = withDefaults(
@@ -9,10 +14,7 @@ const props = withDefaults(
     availablePeriodos?: { id: number; label: string }[]
   }>(),
   {
-    availablePeriodos: () => [
-      { id: 1, label: 'Ene - Jun 2026' },
-      { id: 2, label: 'Ago - Dic 2026' },
-    ],
+    availablePeriodos: () => getAvailableAcademicPeriods(),
   },
 )
 
@@ -24,26 +26,7 @@ const periodoOptions = computed(() =>
   props.availablePeriodos.map((p) => ({ value: String(p.id), label: p.label })),
 )
 
-const monthOptions = computed(() => {
-  const allOption = { value: '', label: 'Todos los meses' }
-  if (props.modelValue.periodoId === 1) {
-    return [
-      allOption,
-      { value: '2', label: 'Febrero' },
-      { value: '3', label: 'Marzo' },
-      { value: '4', label: 'Abril' },
-      { value: '5', label: 'Mayo' },
-      { value: '6', label: 'Junio' },
-    ]
-  }
-  return [
-    allOption,
-    { value: '9', label: 'Septiembre' },
-    { value: '10', label: 'Octubre' },
-    { value: '11', label: 'Noviembre' },
-    { value: '12', label: 'Diciembre' },
-  ]
-})
+const monthOptions = computed(() => getMonthOptionsForPeriodo(props.modelValue.periodoId))
 
 const riskOptions: { value: RiskLevel | ''; label: string }[] = [
   { value: '', label: 'Todos los riesgos' },
@@ -79,7 +62,7 @@ function clearFilters() {
         label="Periodo escolar"
         as="select"
         :options="periodoOptions"
-        @update:model-value="(val) => update({ periodoId: Number(val) || 1, month: undefined })"
+        @update:model-value="(val) => update({ periodoId: Number(val) || getCurrentAcademicPeriod().id, month: undefined })"
       />
       <UiField
         :model-value="modelValue.month !== undefined ? String(modelValue.month) : ''"

@@ -2,6 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import { UiAlert, UiBadge, UiButton, UiCard, UiText } from '../../../shared/components'
 import { normalizeApiError } from '../../../shared/api/apiErrors'
+import { useUnsavedChangesGuard } from '../../../shared/composables/useUnsavedChangesGuard'
+import { getPeriodLabel } from '../../../shared/utils/academicPeriod'
 import { metricsApi } from '../api/metricsApi'
 import type { UnitFailureRow } from '../types/metrics'
 
@@ -77,6 +79,14 @@ function addRow(): void {
   isDirty.value = true
 }
 
+function removeRow(id: string): void {
+  if (rows.value.length <= 1) return
+  rows.value = rows.value.filter((r) => r.id !== id)
+  isDirty.value = true
+}
+
+useUnsavedChangesGuard(isDirty, 'Hay cambios sin guardar en el seguimiento por unidad. ¿Deseas salir?')
+
 async function loadTracking(): Promise<void> {
   isLoading.value = true
   errorMessage.value = ''
@@ -148,7 +158,13 @@ async function handleSave(): Promise<void> {
 
 watch(
   () => props.periodoId,
-  () => {
+  (next, prev) => {
+    if (prev !== undefined && isDirty.value) {
+      const discard = window.confirm(
+        'Hay cambios sin guardar en el seguimiento por unidad. ¿Deseas descartarlos y cargar el nuevo periodo?',
+      )
+      if (!discard) return
+    }
     void loadTracking()
   },
   { immediate: true },
@@ -164,7 +180,7 @@ watch(
     <div class="tracking-body">
       <div class="toolbar">
         <div class="toolbar-meta">
-          <UiBadge tone="info">Periodo: {{ periodoId === 2 ? 'Agosto - Diciembre 2026' : 'Enero - Junio 2026' }}</UiBadge>
+          <UiBadge tone="info">Periodo: {{ getPeriodLabel(periodoId) }}</UiBadge>
           <UiBadge v-if="isDirty" tone="warning">Cambios sin guardar</UiBadge>
         </div>
         <div class="toolbar-actions">
@@ -192,6 +208,7 @@ watch(
               <th rowspan="2">Docente</th>
               <th colspan="8" class="text-center">Unidades (% de reprobación, 0–100%)</th>
               <th rowspan="2" class="col-num-cell">Resultado % Reprob.</th>
+              <th rowspan="2" class="col-action" aria-label="Acciones" />
             </tr>
             <tr>
               <th v-for="u in UNIT_HEADERS" :key="u" class="col-num-cell">{{ u }}</th>
@@ -235,6 +252,18 @@ watch(
                   {{ calcRowAvg(row.units) !== null ? `${calcRowAvg(row.units)}%` : '—' }}
                 </strong>
               </td>
+              <td class="col-action">
+                <button
+                  type="button"
+                  class="remove-row-btn"
+                  :disabled="rows.length <= 1"
+                  aria-label="Eliminar fila"
+                  title="Eliminar fila"
+                  @click="removeRow(row.id)"
+                >
+                  ×
+                </button>
+              </td>
             </tr>
           </tbody>
           <tfoot>
@@ -245,6 +274,7 @@ watch(
                   {{ finalAverage !== null ? `${finalAverage}%` : '—' }}
                 </strong>
               </td>
+              <td />
             </tr>
           </tfoot>
         </table>
@@ -284,5 +314,9 @@ watch(
 .text-danger { color: var(--color-danger-strong, #dc2626); }
 .comments-wrap { display: flex; flex-direction: column; gap: 0.35rem; }
 .field-label { font-size: 0.82rem; font-weight: 600; color: var(--color-text-primary, #0f172a); }
+.col-action { width: 40px; text-align: center; }
+.remove-row-btn { width: 28px; height: 28px; padding: 0; border: 1px solid var(--color-border, #e2e8f0); border-radius: 4px; background: transparent; color: var(--color-text-secondary, #64748b); font-size: 1rem; line-height: 1; cursor: pointer; }
+.remove-row-btn:hover:not(:disabled) { color: var(--color-danger-strong, #dc2626); border-color: var(--color-danger, #ef4444); background: var(--color-danger-bg, #fef2f2); }
+.remove-row-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .btn-sm { padding: 0.3rem 0.7rem; font-size: 0.8125rem; width: fit-content; }
 </style>

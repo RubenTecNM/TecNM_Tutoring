@@ -24,8 +24,8 @@ export function normalizeApiError(error: unknown): NormalizedApiError {
   if (status === 413) {
     return {
       status,
-      code: 'PAYLOAD_TOO_LARGE',
-      message: 'El archivo excede el tamaño máximo permitido (5 MB por imagen).',
+      code: data?.code ?? 'PAYLOAD_TOO_LARGE',
+      message: data?.message ?? 'El archivo excede el tamaño máximo permitido.',
     }
   }
   if (status === 415) {

@@ -13,6 +13,8 @@ import {
   UiText,
 } from '../../../shared/components'
 import { normalizeApiError } from '../../../shared/api/apiErrors'
+import { sanitizePreviewUrl } from '../../../shared/utils/safePreviewUrl'
+import { getCurrentAcademicPeriod, getMonthName } from '../../../shared/utils/academicPeriod'
 import { me } from '../../auth/api/authApi'
 import type { UserResponse } from '../../auth/types/auth'
 import { complianceApi, resolveDocenteClave } from '../api/complianceApi'
@@ -20,20 +22,34 @@ import {
   ComplianceFiltersBar,
   ComplianceKpiCards,
   DeliverableStatusBadge,
+  FormatDocumentPreview,
 } from '../components'
 import type {
   ComplianceFilters,
   DeliverableTask,
   DocenteComplianceSummary,
+  FormatComplianceOverview,
+  FormatTutorEntry,
   PreviewFormat,
   TemplatePreviewResult,
 } from '../types/compliance'
+import { buildOfficialDownloadFileName } from '../utils/templateCatalog'
 
 interface DeliverableRow extends DeliverableTask {
   actions?: string
 }
 
 interface SummaryRow extends DocenteComplianceSummary {
+  id: string
+  actions?: string
+}
+
+interface FormatOverviewRow extends FormatComplianceOverview {
+  id: string
+  actions?: string
+}
+
+interface FormatTutorRow extends FormatTutorEntry {
   id: string
   actions?: string
 }
@@ -60,7 +76,7 @@ const successMessage = ref('')
 
 // Filtros y paginación
 const filters = ref<ComplianceFilters>({
-  periodoId: 1,
+  periodoId: getCurrentAcademicPeriod().id,
   month: undefined,
   formatKey: undefined,
   status: undefined,
@@ -274,9 +290,13 @@ async function loadData(): Promise<void> {
     }
 
     if (isAdmin.value) {
-      const res = await complianceApi.getDocenteSummaries(filters.value, page.value, limit.value)
+      const [res, formatsRes] = await Promise.all([
+        complianceApi.getDocenteSummaries(filters.value, page.value, limit.value),
+        complianceApi.getFormatsOverview(filters.value.periodoId),
+      ])
       docenteSummaries.value = res.data
       totalItems.value = res.total
+      formatsOverview.value = formatsRes
     } else {
       const clave = resolveDocenteClave(currentUser.value?.username)
       const res = await complianceApi.getDeliverables(
@@ -545,17 +565,20 @@ async function handleExportTemplate(task: DeliverableTask, tabKey?: string): Pro
   previewError.value = ''
 
   try {
-    const blob = await complianceApi.exportDeliverableTemplate(task.id, tabKey)
+    const blob = await complianceApi.exportDeliverableTemplate(
+      task.id,
+      tabKey,
+      task.formatKey,
+    )
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
-    const ext = task.hasTabs || task.formatKey === 'DiagnosticoInicial' ? 'xlsx' : 'docx'
     link.href = url
-    link.download = `${task.docenteClave}_${task.formatKey}${tabKey ? `_${tabKey}` : ''}.${ext}`
+    link.download = buildOfficialDownloadFileName(task.formatKey, task.docenteClave, tabKey)
     document.body.appendChild(link)
     link.click()
     link.remove()
     URL.revokeObjectURL(url)
-    successMessage.value = `Plantilla exportada correctamente (${task.title}).`
+    successMessage.value = `Documento descargado en formato oficial (${link.download}).`
   } catch (error) {
     const normalized = normalizeApiError(error)
     const msg =
@@ -591,6 +614,100 @@ async function openDocenteDetail(summary: DocenteComplianceSummary): Promise<voi
   } finally {
     isLoadingDocenteModal.value = false
   }
+}
+
+// Lista de archivos/anexos y panel de tutores activos (Admin)
+const formatsOverview = ref<FormatComplianceOverview[]>([])
+const isFormatDetailModalOpen = ref(false)
+const isLoadingFormatModal = ref(false)
+const selectedFormatOverview = ref<FormatComplianceOverview | null>(null)
+const formatTutorEntries = ref<FormatTutorEntry[]>([])
+const formatTutorFilter = ref<'all' | 'updated' | 'unchanged'>('all')
+const formatTutorSearch = ref('')
+
+const formatOverviewColumns: { key: keyof FormatOverviewRow & string; label: string }[] = [
+  { key: 'title', label: 'Formato / Anexo' },
+  { key: 'templateFileName', label: 'Plantilla oficial' },
+  { key: 'updatedCount', label: 'Con actualizaciones' },
+  { key: 'deliveredCount', label: 'Entregados' },
+  { key: 'pendingCount', label: 'Pendientes' },
+  { key: 'actions', label: 'Acciones' },
+]
+
+const formatTutorColumns: { key: keyof FormatTutorRow & string; label: string }[] = [
+  { key: 'docenteClave', label: 'Clave' },
+  { key: 'docenteName', label: 'Docente Tutor' },
+  { key: 'updatedSummary', label: 'Actualización' },
+  { key: 'actions', label: 'Acciones' },
+]
+
+const tableFormatOverviewRows = computed<FormatOverviewRow[]>(() => {
+  const list = filters.value.formatKey
+    ? formatsOverview.value.filter((f) => f.formatKey === filters.value.formatKey)
+    : formatsOverview.value
+  return list.map((f) => ({ ...f, id: f.formatKey, actions: '' }))
+})
+
+const filteredFormatTutorRows = computed<FormatTutorRow[]>(() => {
+  const q = formatTutorSearch.value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+
+  return formatTutorEntries.value
+    .filter((entry) => {
+      if (formatTutorFilter.value === 'updated' && !entry.hasUpdates) return false
+      if (formatTutorFilter.value === 'unchanged' && entry.hasUpdates) return false
+      if (!q) return true
+      const normName = entry.docenteName
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+      return normName.includes(q) || entry.docenteClave.toLowerCase().includes(q)
+    })
+    .map((entry) => ({ ...entry, id: entry.task.id, actions: '' }))
+})
+
+function formatDateTime(iso?: string): string {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleString('es-MX')
+  } catch {
+    return iso
+  }
+}
+
+async function openFormatDetail(overview: FormatComplianceOverview): Promise<void> {
+  selectedFormatOverview.value = overview
+  formatTutorFilter.value = 'all'
+  formatTutorSearch.value = ''
+  isFormatDetailModalOpen.value = true
+  isLoadingFormatModal.value = true
+
+  try {
+    formatTutorEntries.value = await complianceApi.getFormatTutorEntries(
+      overview.formatKey,
+      filters.value.periodoId,
+    )
+  } catch (error) {
+    errorMessage.value = normalizeApiError(error).message
+    formatTutorEntries.value = []
+  } finally {
+    isLoadingFormatModal.value = false
+  }
+}
+
+function closeFormatDetail(): void {
+  isFormatDetailModalOpen.value = false
+  selectedFormatOverview.value = null
+  formatTutorEntries.value = []
+}
+
+async function inspectTutorModifications(task: DeliverableTask): Promise<void> {
+  isFormatDetailModalOpen.value = false
+  isDocenteDetailModalOpen.value = false
+  await openTaskForm(task)
 }
 
 function closeDocenteDetail(): void {
@@ -682,7 +799,7 @@ onMounted(() => {
           </template>
 
           <template #cell-reportingMonth="{ row }">
-            <span>{{ row.reportingMonth ? (monthNames[row.reportingMonth] || `Mes ${row.reportingMonth}`) : 'Semestral' }}</span>
+            <span>{{ row.reportingMonth ? getMonthName(row.reportingMonth) : 'Semestral' }}</span>
           </template>
 
           <template #cell-status="{ row }">
@@ -737,12 +854,66 @@ onMounted(() => {
     </div>
 
     <!-- Bloque 3B: Vista Coordinador / Admin -->
-    <div v-else class="compliance-block">
-      <UiCard
-        title="Lista de Docentes Tutores"
-        description="Seguimiento consolidado de entregas estructuradas y días de retraso"
-        :aria-busy="isLoading"
-      >
+    <template v-else>
+      <!-- Lista de archivos / anexos oficiales -->
+      <div class="compliance-block">
+        <UiCard
+          title="Archivos y Anexos Oficiales de Tutoría"
+          description="Selecciona un formato para consultar todos los tutores activos, detectar actualizaciones, previsualizar y descargar con su plantilla oficial."
+          :aria-busy="isLoading"
+        >
+          <UiAlert v-if="isLoading" tone="info" title="Cargando catálogo de formatos y anexos..." />
+          <UiTable
+            v-else
+            label="Lista de archivos y anexos de tutoría"
+            :columns="formatOverviewColumns"
+            :rows="tableFormatOverviewRows"
+          >
+            <template #cell-title="{ row }">
+              <div class="format-cell">
+                <div class="format-title-row">
+                  <span class="format-title">{{ row.title }}</span>
+                  <UiBadge tone="info">.{{ row.extension.toUpperCase() }}</UiBadge>
+                  <UiBadge v-if="row.hasTabs" tone="purple">{{ row.tabsCount }} hojas</UiBadge>
+                </div>
+                <span class="format-desc">{{ row.description }}</span>
+              </div>
+            </template>
+
+            <template #cell-templateFileName="{ row }">
+              <code class="template-name">{{ row.templateFileName }}</code>
+            </template>
+
+            <template #cell-updatedCount="{ row }">
+              <UiBadge :tone="row.updatedCount > 0 ? 'success' : 'warning'">
+                {{ row.updatedCount }} / {{ row.totalTutors }} tutores
+              </UiBadge>
+            </template>
+
+            <template #cell-deliveredCount="{ row }">
+              <span class="text-ontime">{{ row.deliveredCount }}</span>
+            </template>
+
+            <template #cell-pendingCount="{ row }">
+              <span :class="{ 'text-pending': row.pendingCount > 0 }">{{ row.pendingCount }}</span>
+            </template>
+
+            <template #cell-actions="{ row }">
+              <UiButton variant="primary" class="btn-sm" @click="openFormatDetail(row)">
+                Ver detalles
+              </UiButton>
+            </template>
+          </UiTable>
+        </UiCard>
+      </div>
+
+      <!-- Lista consolidada por docente tutor -->
+      <div class="compliance-block">
+        <UiCard
+          title="Lista de Docentes Tutores"
+          description="Seguimiento consolidado de entregas estructuradas y días de retraso"
+          :aria-busy="isLoading"
+        >
         <UiAlert v-if="isLoading" tone="info" title="Cargando lista de docentes..." />
         <UiTable
           v-else
@@ -798,6 +969,7 @@ onMounted(() => {
         </div>
       </UiCard>
     </div>
+    </template>
 
     <!-- DIÁLOGO: FORMULARIO ESTRUCTURADO (VENTANA ÚNICA O PESTAÑAS) -->
     <UiDialog
@@ -1011,26 +1183,34 @@ onMounted(() => {
 
         <UiAlert v-if="isPreviewing" tone="info" title="Generando vista previa..." />
 
+        <div v-if="previewTask.hasTabs && previewTask.tabs?.length" class="sheet-tabs" role="tablist" aria-label="Hojas del documento en vista previa">
+          <button
+            v-for="tab in previewTask.tabs"
+            :key="tab.tabKey"
+            type="button"
+            role="tab"
+            class="sheet-tab-btn"
+            :class="{ active: tab.tabKey === previewTabKey }"
+            :aria-selected="tab.tabKey === previewTabKey"
+            @click="previewTabKey = tab.tabKey; void fetchPreview()"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+
         <iframe
-          v-else-if="previewResult?.previewUrlOrContent"
-          :src="previewResult.previewUrlOrContent"
+          v-if="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          :src="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          sandbox="allow-same-origin"
           class="preview-frame"
           title="Vista previa oficial del formato"
         />
 
-        <div v-else class="preview-fallback-sheet">
-          <div class="preview-sheet-header">
-            <strong>{{ previewTask.title }}</strong>
-            <code>{{ previewResult?.fileName ?? `${previewTask.formatKey}.${previewFormat}` }}</code>
-          </div>
-          <div class="prefilled-grid">
-            <div v-for="(val, key) in previewTask.prefilledData" :key="key" class="prefilled-item">
-              <span class="field-label">{{ prefilledLabels[key] ?? key }}</span>
-              <strong>{{ String(val ?? '—') }}</strong>
-            </div>
-          </div>
-          <pre class="payload-preview">{{ JSON.stringify(readSectionPayload(previewTask, previewTabKey), null, 2) }}</pre>
-        </div>
+        <FormatDocumentPreview
+          v-else
+          :task="previewTask"
+          :tab-key="previewTabKey"
+        />
 
         <div class="dialog-actions">
           <UiButton variant="secondary" @click="isPreviewModalOpen = false">
@@ -1066,7 +1246,7 @@ onMounted(() => {
           :rows="docenteModalTasks.map((t) => ({ ...t, actions: '' }))"
         >
           <template #cell-reportingMonth="{ row }">
-            <span>{{ row.reportingMonth ? (monthNames[row.reportingMonth] || `Mes ${row.reportingMonth}`) : 'Semestral' }}</span>
+            <span>{{ row.reportingMonth ? getMonthName(row.reportingMonth) : 'Semestral' }}</span>
           </template>
           <template #cell-status="{ row }">
             <DeliverableStatusBadge :status="row.status" />
@@ -1078,6 +1258,9 @@ onMounted(() => {
           </template>
           <template #cell-actions="{ row }">
             <div class="row-actions">
+              <UiButton variant="primary" class="btn-sm" @click="inspectTutorModifications(row)">
+                Ver modificaciones
+              </UiButton>
               <UiButton variant="secondary" class="btn-sm" @click="openPreviewModal(row)">
                 Vista previa
               </UiButton>
@@ -1087,7 +1270,7 @@ onMounted(() => {
                 :disabled="isExporting"
                 @click="handleExportTemplate(row)"
               >
-                Exportar
+                Descargar
               </UiButton>
             </div>
           </template>
@@ -1097,6 +1280,126 @@ onMounted(() => {
           <UiButton variant="primary" @click="closeDocenteDetail">
             Cerrar
           </UiButton>
+        </div>
+      </div>
+    </UiDialog>
+
+    <!-- DIÁLOGO: DETALLE DE FORMATO / ANEXO CON TUTORES ACTIVOS (ADMIN) -->
+    <UiDialog
+      v-model="isFormatDetailModalOpen"
+      :title="selectedFormatOverview ? `Tutores activos · ${selectedFormatOverview.title}` : 'Detalle del formato'"
+      class="format-detail-dialog"
+    >
+      <div v-if="selectedFormatOverview" class="dialog-body">
+        <div class="dialog-summary-bar">
+          <div>
+            <strong>Plantilla oficial:</strong>
+            <code class="template-name">{{ selectedFormatOverview.templateFileName }}</code>
+          </div>
+          <div>
+            <strong>Con actualizaciones:</strong>
+            {{ selectedFormatOverview.updatedCount }} / {{ selectedFormatOverview.totalTutors }} tutores
+          </div>
+        </div>
+
+        <div class="format-filter-bar">
+          <div class="filter-pills">
+            <UiButton
+              :variant="formatTutorFilter === 'all' ? 'primary' : 'secondary'"
+              class="btn-sm"
+              @click="formatTutorFilter = 'all'"
+            >
+              Todos ({{ formatTutorEntries.length }})
+            </UiButton>
+            <UiButton
+              :variant="formatTutorFilter === 'updated' ? 'primary' : 'secondary'"
+              class="btn-sm"
+              @click="formatTutorFilter = 'updated'"
+            >
+              Con actualizaciones ({{ formatTutorEntries.filter((e) => e.hasUpdates).length }})
+            </UiButton>
+            <UiButton
+              :variant="formatTutorFilter === 'unchanged' ? 'primary' : 'secondary'"
+              class="btn-sm"
+              @click="formatTutorFilter = 'unchanged'"
+            >
+              Sin cambios ({{ formatTutorEntries.filter((e) => !e.hasUpdates).length }})
+            </UiButton>
+          </div>
+          <UiField
+            v-model="formatTutorSearch"
+            label="Buscar tutor"
+            placeholder="Clave o nombre del tutor..."
+            class="tutor-search-field"
+          />
+        </div>
+
+        <UiAlert v-if="isLoadingFormatModal" tone="info" title="Cargando tutores activos..." />
+        <UiAlert
+          v-else-if="filteredFormatTutorRows.length === 0"
+          tone="info"
+          title="Sin tutores en este filtro"
+        >
+          <UiText>Ningún tutor coincide con el criterio seleccionado.</UiText>
+        </UiAlert>
+        <UiTable
+          v-else
+          label="Tutores activos por formato"
+          :columns="formatTutorColumns"
+          :rows="filteredFormatTutorRows"
+        >
+          <template #cell-docenteClave="{ row }">
+            <code class="docente-clave">{{ row.docenteClave }}</code>
+          </template>
+
+          <template #cell-docenteName="{ row }">
+            <div class="tutor-cell">
+              <span class="docente-name">{{ row.docenteName }}</span>
+              <DeliverableStatusBadge :status="row.task.status" />
+            </div>
+          </template>
+
+          <template #cell-updatedSummary="{ row }">
+            <div class="update-cell">
+              <UiBadge :tone="row.hasUpdates ? 'success' : 'warning'">
+                {{ row.hasUpdates ? 'Actualizado' : 'Sin cambios' }}
+              </UiBadge>
+              <span class="update-meta">{{ row.updatedSummary }}</span>
+              <span v-if="row.updatedAt" class="update-date">{{ formatDateTime(row.updatedAt) }}</span>
+            </div>
+          </template>
+
+          <template #cell-actions="{ row }">
+            <div class="row-actions">
+              <UiButton
+                variant="primary"
+                class="btn-sm"
+                @click="inspectTutorModifications(row.task)"
+              >
+                Ver modificaciones
+              </UiButton>
+              <UiButton
+                variant="secondary"
+                class="btn-sm"
+                :disabled="isPreviewing"
+                @click="openPreviewModal(row.task)"
+              >
+                Vista previa
+              </UiButton>
+              <UiButton
+                variant="secondary"
+                class="btn-sm"
+                :disabled="isExporting"
+                @click="handleExportTemplate(row.task)"
+              >
+                Descargar
+              </UiButton>
+            </div>
+          </template>
+        </UiTable>
+
+        <div class="dialog-actions">
+          <UiButton variant="secondary" @click="closeFormatDetail">Cerrar</UiButton>
         </div>
       </div>
     </UiDialog>
@@ -1128,6 +1431,60 @@ onMounted(() => {
 .format-title {
   font-weight: 500;
   color: var(--color-text-primary, #0f172a);
+}
+
+.format-desc {
+  font-size: 0.76rem;
+  color: var(--color-text-secondary, #64748b);
+}
+
+.template-name {
+  font-family: monospace;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  background-color: var(--color-gray-100, #f1f5f9);
+  color: var(--color-text-primary, #0f172a);
+  word-break: break-word;
+}
+
+:global(dialog.format-detail-dialog) {
+  width: min(1080px, calc(100vw - 32px));
+  max-width: 1080px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.format-filter-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.filter-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.tutor-search-field {
+  min-width: 240px;
+}
+
+.tutor-cell,
+.update-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+}
+
+.update-meta,
+.update-date {
+  font-size: 0.74rem;
+  color: var(--color-text-secondary, #64748b);
 }
 
 .format-code {
@@ -1203,10 +1560,13 @@ onMounted(() => {
   gap: 0.5rem;
 }
 
-.task-form-dialog,
-.preview-dialog,
-.detail-dialog {
-  max-width: 760px;
+:global(dialog.task-form-dialog),
+:global(dialog.preview-dialog),
+:global(dialog.detail-dialog) {
+  width: min(920px, calc(100vw - 32px));
+  max-width: 920px;
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 .dialog-body {

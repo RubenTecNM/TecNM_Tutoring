@@ -14,9 +14,13 @@ import {
   UiText,
 } from '../../../shared/components'
 import { normalizeApiError } from '../../../shared/api/apiErrors'
+import {
+  getCurrentAcademicPeriod,
+  getMonthName,
+  isSecondTerm,
+} from '../../../shared/utils/academicPeriod'
 import { me } from '../../auth/api/authApi'
 import type { UserResponse } from '../../auth/types/auth'
-import type { PreviewFormat } from '../../compliance/types/compliance'
 import { metricsApi } from '../api/metricsApi'
 import {
   FailureRiskBadge,
@@ -25,14 +29,10 @@ import {
   UnitFailureTrackingPanel,
 } from '../components'
 import type {
-  CoordinatorFormatKey,
-  CoordinatorSheetKey,
   CoordinatorWorkbook,
   FailureReportItem,
   FinalReportReadiness,
   MetricsFilters,
-  UnitResultsImportResponse,
-  WorkbookPreviewResult,
 } from '../types/metrics'
 
 const currentUser = ref<UserResponse | null>(null)
@@ -42,9 +42,11 @@ const isLoading = ref(true)
 const errorMessage = ref('')
 const successMessage = ref('')
 
+const activePeriod = getCurrentAcademicPeriod()
+
 // Filtros y paginación de reportes de reprobación
 const filters = ref<MetricsFilters>({
-  periodoId: 1,
+  periodoId: activePeriod.id,
   month: undefined,
   riskLevel: undefined,
   search: undefined,
@@ -57,7 +59,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / limit
 
 const failureReports = ref<FailureReportItem[]>([])
 const readiness = ref<FinalReportReadiness>({
-  periodoId: 1,
+  periodoId: activePeriod.id,
   totalTutors: 0,
   completedDeliveries: 0,
   totalExpectedDeliveries: 0,
@@ -66,15 +68,9 @@ const readiness = ref<FinalReportReadiness>({
   canGenerateFinalReport: false,
 })
 
-// Libros de coordinación (Admin)
-const activeWorkbookKey = ref<CoordinatorFormatKey>('ReporteSemestralCoordinador')
-const activeWorkbook = ref<CoordinatorWorkbook | null>(null)
-const isLoadingWorkbook = ref(false)
+// Estado del Reporte Semestral Final (Admin)
+const finalReportWorkbook = ref<CoordinatorWorkbook | null>(null)
 const isFinalizing = ref(false)
-
-// Modal de importación de Resultados-por-unidad FINAL.xls (Admin)
-const isImportModalOpen = ref(false)
-const latestImport = ref<UnitResultsImportResponse | null>(null)
 
 // Modal de captura de reprobación (Tutor)
 const isCreateFailureOpen = ref(false)
@@ -90,16 +86,6 @@ const newFailure = ref({
   failedUnits: '',
   preventiveActions: '',
 })
-
-// Modal de vista previa de libro de coordinación (PDF / XLSX)
-const isPreviewOpen = ref(false)
-const previewWorkbookTarget = ref<CoordinatorWorkbook | null>(null)
-const previewTabKey = ref<CoordinatorSheetKey | undefined>(undefined)
-const previewFormat = ref<PreviewFormat>('pdf')
-const previewResult = ref<WorkbookPreviewResult | null>(null)
-const isPreviewing = ref(false)
-const isExporting = ref(false)
-const previewError = ref('')
 
 const monthNames: Record<number, string> = {
   2: 'Febrero',
@@ -135,23 +121,18 @@ const kpis = computed(() => {
 })
 
 const isFinalReportFinalized = computed(
-  () =>
-    activeWorkbook.value?.formatKey === 'ReporteSemestralCoordinador' &&
-    activeWorkbook.value.status === 'Finalized',
+  () => finalReportWorkbook.value?.status === 'Finalized',
 )
 
-async function loadWorkbook(): Promise<void> {
+async function loadFinalReportStatus(): Promise<void> {
   if (!isAdmin.value) return
-  isLoadingWorkbook.value = true
   try {
-    activeWorkbook.value = await metricsApi.getCoordinatorWorkbook(
-      activeWorkbookKey.value,
+    finalReportWorkbook.value = await metricsApi.getCoordinatorWorkbook(
+      'ReporteSemestralCoordinador',
       filters.value.periodoId,
     )
   } catch (error) {
     errorMessage.value = normalizeApiError(error).message
-  } finally {
-    isLoadingWorkbook.value = false
   }
 }
 
@@ -172,10 +153,9 @@ async function loadData(): Promise<void> {
     failureReports.value = failuresRes.data
     totalItems.value = failuresRes.total
     readiness.value = readinessRes
-    latestImport.value = metricsApi.getLatestUnitImport(filters.value.periodoId)
 
     if (isAdmin.value) {
-      await loadWorkbook()
+      await loadFinalReportStatus()
     }
   } catch (error) {
     errorMessage.value = normalizeApiError(error).message
@@ -193,20 +173,9 @@ watch(
   { deep: true },
 )
 
-watch(activeWorkbookKey, () => {
-  void loadWorkbook()
-})
-
 function goToPage(nextPage: number): void {
   if (nextPage < 1 || nextPage > totalPages.value || nextPage === page.value) return
   page.value = nextPage
-  void loadData()
-}
-
-function handleUnitImportSuccess(result: UnitResultsImportResponse): void {
-  latestImport.value = result
-  page.value = 1
-  successMessage.value = `Insumo "${result.fileName}" procesado: ${result.importedRows} registros integrados (${result.highRiskSubjects} materias en riesgo alto).`
   void loadData()
 }
 
@@ -216,10 +185,7 @@ async function handleFinalizeFinalReport(): Promise<void> {
   errorMessage.value = ''
 
   try {
-    const finalized = await metricsApi.finalizeFinalReport(filters.value.periodoId)
-    if (activeWorkbookKey.value === 'ReporteSemestralCoordinador') {
-      activeWorkbook.value = finalized
-    }
+    finalReportWorkbook.value = await metricsApi.finalizeFinalReport(filters.value.periodoId)
     successMessage.value = 'Reporte Semestral Final cerrado oficialmente.'
   } catch (error) {
     errorMessage.value = normalizeApiError(error).message
@@ -273,7 +239,7 @@ async function handleCreateFailure(): Promise<void> {
       claveMateria: '',
       subjectName: '',
       grupo: '',
-      reportingMonth: filters.value.periodoId === 2 ? '9' : '3',
+      reportingMonth: isSecondTerm(filters.value.periodoId) ? '9' : '3',
       totalStudents: '30',
       failedStudents: '0',
       failedUnits: '',
@@ -285,79 +251,6 @@ async function handleCreateFailure(): Promise<void> {
     failureFormError.value = normalizeApiError(error).message
   } finally {
     isCreatingFailure.value = false
-  }
-}
-
-async function handlePreviewWorkbook(
-  workbook: CoordinatorWorkbook,
-  tabKey: CoordinatorSheetKey,
-): Promise<void> {
-  if (isPreviewing.value) return
-  previewWorkbookTarget.value = workbook
-  previewTabKey.value = tabKey
-  previewResult.value = null
-  previewError.value = ''
-  isPreviewOpen.value = true
-  await fetchWorkbookPreview()
-}
-
-async function fetchWorkbookPreview(): Promise<void> {
-  if (!previewWorkbookTarget.value || isPreviewing.value) return
-  isPreviewing.value = true
-  previewError.value = ''
-
-  try {
-    previewResult.value = await metricsApi.previewWorkbook(
-      previewWorkbookTarget.value.id,
-      previewTabKey.value,
-      previewFormat.value,
-    )
-  } catch (error) {
-    previewError.value = normalizeApiError(error).message
-  } finally {
-    isPreviewing.value = false
-  }
-}
-
-async function switchPreviewFormat(fmt: PreviewFormat): Promise<void> {
-  if (previewFormat.value === fmt || isPreviewing.value) return
-  previewFormat.value = fmt
-  await fetchWorkbookPreview()
-}
-
-async function handleExportWorkbook(
-  workbook: CoordinatorWorkbook,
-  tabKey?: CoordinatorSheetKey,
-): Promise<void> {
-  if (isExporting.value) return
-  isExporting.value = true
-  errorMessage.value = ''
-  previewError.value = ''
-
-  try {
-    const blob = await metricsApi.exportWorkbook(workbook.id, tabKey)
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = workbook.templateFileName
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
-    successMessage.value = `Libro exportado desde plantilla oficial (${workbook.templateFileName}).`
-  } catch (error) {
-    const normalized = normalizeApiError(error)
-    const msg =
-      normalized.status === 404 || normalized.status === 0
-        ? 'El servicio de exportación .xlsx en backend aún no está activo.'
-        : normalized.message
-    if (isPreviewOpen.value) {
-      previewError.value = msg
-    } else {
-      errorMessage.value = msg
-    }
-  } finally {
-    isExporting.value = false
   }
 }
 
@@ -474,11 +367,7 @@ onMounted(() => {
     <div class="metrics-block">
       <UiCard
         title="Alertas de Reprobación por Materia y Grupo"
-        :description="
-          latestImport
-            ? `Último insumo integrado: ${latestImport.fileName} (${latestImport.importedRows} registros · ${latestImport.highRiskSubjects} en riesgo alto)`
-            : 'Seguimiento mensual de índices de reprobación y acciones preventivas'
-        "
+        description="Seguimiento mensual de índices de reprobación y acciones preventivas"
         :aria-busy="isLoading"
       >
         <UiAlert v-if="isLoading" tone="info" title="Cargando métricas de reprobación..." />
@@ -503,7 +392,7 @@ onMounted(() => {
           </template>
 
           <template #cell-reportingMonth="{ row }">
-            <span>{{ monthNames[row.reportingMonth] || `Mes ${row.reportingMonth}` }}</span>
+            <span>{{ getMonthName(row.reportingMonth) }}</span>
           </template>
 
           <template #cell-failedStudents="{ row }">
@@ -572,61 +461,6 @@ onMounted(() => {
           </UiButton>
         </div>
       </form>
-    </UiDialog>
-
-    <!-- Modal: Vista Previa de Libro de Coordinación -->
-    <UiDialog
-      v-model="isPreviewOpen"
-      :title="previewWorkbookTarget ? `Vista previa: ${previewWorkbookTarget.title}` : 'Vista previa'"
-      class="preview-dialog"
-    >
-      <div v-if="previewWorkbookTarget" class="dialog-body">
-        <div class="preview-toolbar">
-          <div class="format-switch">
-            <UiButton
-              :variant="previewFormat === 'pdf' ? 'primary' : 'secondary'"
-              class="btn-sm"
-              :disabled="isPreviewing"
-              @click="switchPreviewFormat('pdf')"
-            >
-              Vista PDF
-            </UiButton>
-            <UiButton
-              :variant="previewFormat === 'xlsx' ? 'primary' : 'secondary'"
-              class="btn-sm"
-              :disabled="isPreviewing"
-              @click="switchPreviewFormat('xlsx')"
-            >
-              Vista XLSX
-            </UiButton>
-          </div>
-          <UiButton
-            variant="primary"
-            class="btn-sm"
-            :loading="isExporting"
-            @click="handleExportWorkbook(previewWorkbookTarget, previewTabKey)"
-          >
-            Exportar .xlsx
-          </UiButton>
-        </div>
-
-        <UiAlert v-if="previewError" tone="danger" title="Aviso">
-          <UiText>{{ previewError }}</UiText>
-        </UiAlert>
-        <UiAlert v-if="isPreviewing" tone="info" title="Generando vista previa..." />
-
-        <iframe
-          v-else-if="previewResult?.previewUrlOrContent"
-          :src="previewResult.previewUrlOrContent"
-          class="preview-frame"
-          title="Vista previa del libro de coordinación"
-        />
-        <pre v-else class="payload-preview">{{ JSON.stringify(previewWorkbookTarget.tabs.find((t) => t.tabKey === previewTabKey) ?? previewWorkbookTarget, null, 2) }}</pre>
-
-        <div class="dialog-actions">
-          <UiButton variant="secondary" @click="isPreviewOpen = false">Cerrar</UiButton>
-        </div>
-      </div>
     </UiDialog>
   </UiBasePage>
 </template>
@@ -740,6 +574,12 @@ onMounted(() => {
 .capture-dialog :deep(input[type='number']::-webkit-outer-spin-button) {
   -webkit-appearance: none;
   margin: 0;
+}
+
+@media (max-width: 640px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .preview-frame {

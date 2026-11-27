@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useUnsavedChangesGuard } from '../../../shared/composables/useUnsavedChangesGuard'
 import {
   UiAlert,
   UiBadge,
@@ -12,6 +13,7 @@ import {
   UiText,
 } from '../../../shared/components'
 import { normalizeApiError } from '../../../shared/api/apiErrors'
+import { sanitizePreviewUrl } from '../../../shared/utils/safePreviewUrl'
 import { me } from '../../auth/api/authApi'
 import type { UserResponse } from '../../auth/types/auth'
 import { complianceApi } from '../api/complianceApi'
@@ -430,10 +432,7 @@ function goBack(): void {
   void router.push({ name: 'compliance-dashboard' })
 }
 
-onBeforeRouteLeave(() => {
-  if (!isDirty.value) return true
-  return window.confirm('Hay cambios sin guardar en el Anexo 19-A. ¿Deseas salir?')
-})
+useUnsavedChangesGuard(isDirty, 'Hay cambios sin guardar en el Anexo 19-A. ¿Deseas salir?')
 
 onMounted(() => {
   void loadAnexo19A()
@@ -754,8 +753,9 @@ onMounted(() => {
         <UiAlert v-if="isPreviewing" tone="info" title="Generando vista previa..." />
 
         <iframe
-          v-else-if="previewResult?.previewUrlOrContent"
-          :src="previewResult.previewUrlOrContent"
+          v-else-if="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          :src="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          sandbox="allow-same-origin"
           class="preview-frame"
           title="Vista previa Anexo 19-A"
         />
@@ -1079,5 +1079,14 @@ onMounted(() => {
 .btn-sm {
   padding: 0.3rem 0.7rem;
   font-size: 0.8125rem;
+}
+
+@media (max-width: 640px) {
+  .top-actions {
+    width: 100%;
+  }
+  .top-actions :deep(button) {
+    flex: 1 1 auto;
+  }
 }
 </style>

@@ -15,6 +15,7 @@ export const metricsRoutes: RouteRecordRaw[] = [
     component: () => import('./views/MatrizControlCoordinacionView.vue'),
     meta: {
       requiresAuth: true,
+      roles: ['Admin'],
       title: 'Matriz de Control de Coordinación',
     },
   },
@@ -24,6 +25,7 @@ export const metricsRoutes: RouteRecordRaw[] = [
     component: () => import('./views/ReporteSemestralCoordinadorView.vue'),
     meta: {
       requiresAuth: true,
+      roles: ['Admin'],
       title: 'Reporte Semestral del Coordinador',
     },
   },

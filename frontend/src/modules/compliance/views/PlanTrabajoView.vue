@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useUnsavedChangesGuard } from '../../../shared/composables/useUnsavedChangesGuard'
 import {
   UiAlert,
   UiBadge,
@@ -12,6 +13,12 @@ import {
   UiText,
 } from '../../../shared/components'
 import { normalizeApiError } from '../../../shared/api/apiErrors'
+import { sanitizePreviewUrl } from '../../../shared/utils/safePreviewUrl'
+import {
+  getCurrentAcademicPeriod,
+  getPeriodLabel,
+  isSecondTerm,
+} from '../../../shared/utils/academicPeriod'
 import { me } from '../../auth/api/authApi'
 import type { UserResponse } from '../../auth/types/auth'
 import { complianceApi } from '../api/complianceApi'
@@ -116,7 +123,7 @@ const DEFAULT_DATES_AGO_DIC_2026 = [
 ]
 
 function buildDefaultSessions(periodoId: number): PlanTrabajoSession[] {
-  const dates = periodoId === 2 ? DEFAULT_DATES_AGO_DIC_2026 : DEFAULT_DATES_ENE_JUN_2026
+  const dates = isSecondTerm(periodoId) ? DEFAULT_DATES_AGO_DIC_2026 : DEFAULT_DATES_ENE_JUN_2026
   return Array.from({ length: 16 }, (_, idx) => ({
     sessionNumber: idx + 1,
     dateRange: dates[idx] ?? `Semana ${idx + 1}`,
@@ -127,7 +134,7 @@ function buildDefaultSessions(periodoId: number): PlanTrabajoSession[] {
 }
 
 const form = ref<PlanTrabajoPayload>({
-  semesterLabel: 'Enero - Junio 2026',
+  semesterLabel: getCurrentAcademicPeriod().label,
   groupSemester: '1°A (1er Semestre)',
   career: 'Ingeniería en Sistemas Computacionales',
   shift: 'Matutino',
@@ -157,7 +164,7 @@ function hydrateForm(loadedTask: DeliverableTask, user: UserResponse | null): vo
   const pre = loadedTask.prefilledData ?? {}
   const saved = (loadedTask.formPayload ?? {}) as Partial<PlanTrabajoPayload>
   const defaultPeriodLabel =
-    loadedTask.periodoId === 2 ? 'Agosto - Diciembre 2026' : 'Enero - Junio 2026'
+    getPeriodLabel(loadedTask.periodoId)
 
   const savedSessions = Array.isArray(saved.sessions) && saved.sessions.length === 16
     ? saved.sessions
@@ -393,10 +400,7 @@ function goBack(): void {
   void router.push({ name: 'compliance-dashboard' })
 }
 
-onBeforeRouteLeave(() => {
-  if (!isDirty.value) return true
-  return window.confirm('Hay cambios sin guardar en el Plan de Trabajo. ¿Deseas salir?')
-})
+useUnsavedChangesGuard(isDirty, 'Hay cambios sin guardar en el Plan de Trabajo. ¿Deseas salir?')
 
 onMounted(() => {
   void loadPlanTrabajo()
@@ -705,8 +709,9 @@ onMounted(() => {
         <UiAlert v-if="isPreviewing" tone="info" title="Generando vista previa..." />
 
         <iframe
-          v-else-if="previewResult?.previewUrlOrContent"
-          :src="previewResult.previewUrlOrContent"
+          v-else-if="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          :src="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          sandbox="allow-same-origin"
           class="preview-frame"
           title="Vista previa PDF Plan de Trabajo"
         />
@@ -1046,5 +1051,14 @@ onMounted(() => {
 .btn-sm {
   padding: 0.3rem 0.7rem;
   font-size: 0.8125rem;
+}
+
+@media (max-width: 640px) {
+  .top-actions {
+    width: 100%;
+  }
+  .top-actions :deep(button) {
+    flex: 1 1 auto;
+  }
 }
 </style>

@@ -9,8 +9,10 @@ const baseURL =
 export const http = axios.create({
   baseURL,
   withCredentials: true,
+  timeout: 15000,
   headers: {
     Accept: 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',
   },
 })
 

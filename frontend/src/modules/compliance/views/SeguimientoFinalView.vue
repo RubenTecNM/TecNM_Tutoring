@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useUnsavedChangesGuard } from '../../../shared/composables/useUnsavedChangesGuard'
+import { sanitizePreviewUrl } from '../../../shared/utils/safePreviewUrl'
+import { getCurrentAcademicPeriod, getPeriodLabel } from '../../../shared/utils/academicPeriod'
 import {
   UiAlert,
   UiBadge,
@@ -95,6 +98,13 @@ const isTabDirty = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 
+// Evidencia fotográfica (Anexo 19 — sesiones y lista de asistencia)
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024
+const MAX_PHOTO_COUNT = 10
+const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const pendingPhotos = ref<File[]>([])
+const photoError = ref('')
+
 // Vista previa
 const isPreviewOpen = ref(false)
 const previewFormat = ref<PreviewFormat>('pdf')
@@ -105,7 +115,7 @@ const previewError = ref('')
 const header = ref({
   instituteName: 'Instituto Tecnológico Superior de Monclova',
   tutorName: '',
-  periodLabel: 'Enero - Junio 2026',
+  periodLabel: getCurrentAcademicPeriod().label,
   reportDate: new Date().toISOString().slice(0, 10),
   educationalProgram: 'Ingeniería en Sistemas Computacionales',
   semester: '1°',
@@ -457,7 +467,7 @@ async function loadWorkbook(): Promise<void> {
     header.value = {
       instituteName: String(pre.plantel ?? 'Instituto Tecnológico Superior de Monclova'),
       tutorName: String(pre.docente_nombre ?? currentUser.value?.name ?? 'Docente Tutor'),
-      periodLabel: loaded.periodoId === 2 ? 'Agosto - Diciembre 2026' : 'Enero - Junio 2026',
+      periodLabel: getPeriodLabel(loaded.periodoId),
       reportDate: new Date().toISOString().slice(0, 10),
       educationalProgram: String(pre.carrera ?? 'Ingeniería en Sistemas Computacionales'),
       semester: String(pre.semestre ?? '1°'),
@@ -569,9 +579,12 @@ async function handleSaveTab(submit: boolean): Promise<void> {
     const updated = await complianceApi.saveDeliverableForm(task.value.id, {
       tabKey: activeTabKey.value,
       formPayload: getTabPayload(activeTabKey.value),
+      photoEvidenceFiles: pendingPhotos.value.length > 0 ? pendingPhotos.value : undefined,
       submit,
     })
     task.value = updated
+    pendingPhotos.value = []
+    photoError.value = ''
     completedTabs.value.add(activeTabKey.value)
     isTabDirty.value = false
     successMessage.value = submit
@@ -581,6 +594,52 @@ async function handleSaveTab(submit: boolean): Promise<void> {
     errorMessage.value = normalizeApiError(error).message
   } finally {
     isSaving.value = false
+  }
+}
+
+function handlePhotoUpload(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  photoError.value = ''
+  if (files.length === 0) return
+
+  const existingCount = (task.value?.photoEvidenceUrls?.length ?? 0) + pendingPhotos.value.length
+  if (existingCount + files.length > MAX_PHOTO_COUNT) {
+    photoError.value = `Máximo ${MAX_PHOTO_COUNT} fotografías por entrega.`
+    input.value = ''
+    return
+  }
+
+  for (const file of files) {
+    if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
+      photoError.value = `Formato no permitido (${file.name}). Usa JPG, PNG o WEBP (415).`
+      input.value = ''
+      return
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      photoError.value = `La imagen "${file.name}" supera 5 MB (413).`
+      input.value = ''
+      return
+    }
+  }
+
+  pendingPhotos.value = [...pendingPhotos.value, ...files]
+  markDirty()
+  input.value = ''
+}
+
+function removePendingPhoto(idx: number): void {
+  pendingPhotos.value.splice(idx, 1)
+  markDirty()
+}
+
+function formatEvidenceLabel(url: string, idx: number): string {
+  const cleaned = url.replace(/^local-evidence:\/\//, '')
+  try {
+    const decoded = decodeURIComponent(cleaned.split('/').pop() ?? '')
+    return decoded || `Evidencia ${idx + 1}`
+  } catch {
+    return `Evidencia ${idx + 1}`
   }
 }
 
@@ -711,10 +770,7 @@ function goBack(): void {
   void router.push({ name: 'compliance-dashboard' })
 }
 
-onBeforeRouteLeave(() => {
-  if (!isTabDirty.value) return true
-  return window.confirm('Hay cambios sin guardar en la pestaña actual. ¿Deseas salir?')
-})
+useUnsavedChangesGuard(isTabDirty)
 
 onMounted(() => {
   void loadWorkbook()
@@ -740,7 +796,7 @@ onMounted(() => {
           Guardar pestaña
         </UiButton>
         <UiButton v-if="!isReadOnly" variant="primary" :loading="isSaving" :disabled="isLoading" @click="handleSaveTab(true)">
-          Entregar libro final
+          {{ task?.status === 'Pending' ? 'Entregar libro final' : 'Actualizar entrega' }}
         </UiButton>
       </div>
     </template>
@@ -794,7 +850,8 @@ onMounted(() => {
               @click="switchTab(tab.tabKey)"
             >
               <span>{{ tab.label }}</span>
-              <span v-if="completedTabs.has(tab.tabKey)" aria-label="Guardada">✓</span>
+              <span v-if="tab.tabKey === activeTabKey && isTabDirty" class="tab-dirty-dot" aria-label="Cambios sin guardar">●</span>
+              <span v-else-if="completedTabs.has(tab.tabKey)" aria-label="Guardada">✓</span>
             </button>
           </div>
 
@@ -1012,6 +1069,7 @@ onMounted(() => {
                       <th>Docente</th>
                       <th>Alumno(s)</th>
                       <th>Causa de reprobación</th>
+                      <th v-if="!isReadOnly" class="col-action" aria-label="Acciones" />
                     </tr>
                   </thead>
                   <tbody>
@@ -1020,6 +1078,18 @@ onMounted(() => {
                       <td><input :value="row.teacherName" type="text" class="cell-input" :disabled="isReadOnly" @input="updateStringField(row, 'teacherName', $event)" /></td>
                       <td><input :value="row.students" type="text" class="cell-input" :disabled="isReadOnly" @input="updateStringField(row, 'students', $event)" /></td>
                       <td><input :value="row.failureCause" type="text" class="cell-input" :disabled="isReadOnly" @input="updateStringField(row, 'failureCause', $event)" /></td>
+                      <td v-if="!isReadOnly" class="col-action">
+                        <button
+                          type="button"
+                          class="remove-row-btn"
+                          :disabled="tabInformeFailureCauses.length <= 1"
+                          aria-label="Eliminar asignatura"
+                          title="Eliminar asignatura"
+                          @click="tabInformeFailureCauses.splice(idx, 1); markDirty()"
+                        >
+                          ×
+                        </button>
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -1062,6 +1132,7 @@ onMounted(() => {
                     <th rowspan="2">Docente</th>
                     <th colspan="8" class="text-center">Unidades (% de reprobación, 0–100%)</th>
                     <th rowspan="2" class="col-num-cell">Resultado % Reprob.</th>
+                    <th v-if="!isReadOnly" rowspan="2" class="col-action" aria-label="Acciones" />
                   </tr>
                   <tr>
                     <th v-for="u in UNIT_HEADERS" :key="u" class="col-num-cell">{{ u }}</th>
@@ -1108,6 +1179,18 @@ onMounted(() => {
                         {{ calcRowReprobAvg(row.units) !== null ? `${calcRowReprobAvg(row.units)}%` : '—' }}
                       </strong>
                     </td>
+                    <td v-if="!isReadOnly" class="col-action">
+                      <button
+                        type="button"
+                        class="remove-row-btn"
+                        :disabled="tabReprobRows.length <= 1"
+                        aria-label="Eliminar materia"
+                        title="Eliminar materia"
+                        @click="tabReprobRows.splice(rIdx, 1); markDirty()"
+                      >
+                        ×
+                      </button>
+                    </td>
                   </tr>
                 </tbody>
                 <tfoot>
@@ -1118,6 +1201,7 @@ onMounted(() => {
                         {{ finalFailureAverage !== null ? `${finalFailureAverage}%` : '—' }}
                       </strong>
                     </td>
+                    <td v-if="!isReadOnly" />
                   </tr>
                 </tfoot>
               </table>
@@ -1191,6 +1275,69 @@ onMounted(() => {
         </UiCard>
       </div>
 
+      <!-- Evidencia fotográfica (Anexo 19) -->
+      <div class="wb-block">
+        <UiCard
+          title="Evidencia Fotográfica de Sesiones"
+          description="Anexo 19: adjunta evidencias fotográficas de las sesiones y lista de asistencia (JPG, PNG o WEBP · máx. 5 MB c/u · hasta 10 fotos)."
+        >
+          <div class="evidence-body">
+            <UiAlert v-if="photoError" tone="danger" title="Archivo inválido" dismissible @dismiss="photoError = ''">
+              <UiText>{{ photoError }}</UiText>
+            </UiAlert>
+
+            <div v-if="!isReadOnly" class="evidence-picker">
+              <label for="final-photo-input" class="evidence-upload-label">
+                Seleccionar fotografías (.jpg, .png, .webp)
+              </label>
+              <input
+                id="final-photo-input"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                class="sr-only"
+                :disabled="isSaving"
+                @change="handlePhotoUpload"
+              />
+            </div>
+
+            <div v-if="pendingPhotos.length > 0" class="evidence-list">
+              <span class="sub-label">Por guardar ({{ pendingPhotos.length }}):</span>
+              <div class="evidence-chips">
+                <span v-for="(file, idx) in pendingPhotos" :key="`${file.name}-${idx}`" class="evidence-chip pending">
+                  <span>{{ file.name }} ({{ (file.size / 1024).toFixed(0) }} KB)</span>
+                  <button
+                    type="button"
+                    class="chip-remove"
+                    aria-label="Quitar fotografía"
+                    @click="removePendingPhoto(idx)"
+                  >
+                    ×
+                  </button>
+                </span>
+              </div>
+            </div>
+
+            <div v-if="task.photoEvidenceUrls && task.photoEvidenceUrls.length > 0" class="evidence-list">
+              <span class="sub-label">Evidencias registradas ({{ task.photoEvidenceUrls.length }}):</span>
+              <div class="evidence-chips">
+                <span
+                  v-for="(url, idx) in task.photoEvidenceUrls"
+                  :key="`${url}-${idx}`"
+                  class="evidence-chip saved"
+                >
+                  {{ formatEvidenceLabel(url, idx) }}
+                </span>
+              </div>
+            </div>
+
+            <UiText v-else-if="pendingPhotos.length === 0" class="sub-label">
+              Aún no se han adjuntado fotografías de evidencia.
+            </UiText>
+          </div>
+        </UiCard>
+      </div>
+
       <!-- Firma del tutor -->
       <div class="wb-block">
         <UiCard title="Validación y Firma del Tutor">
@@ -1244,7 +1391,13 @@ onMounted(() => {
         </div>
         <UiAlert v-if="previewError" tone="danger" title="Aviso"><UiText>{{ previewError }}</UiText></UiAlert>
         <UiAlert v-if="isPreviewing" tone="info" title="Generando vista previa..." />
-        <iframe v-else-if="previewResult?.previewUrlOrContent" :src="previewResult.previewUrlOrContent" class="preview-frame" title="Vista previa final" />
+        <iframe
+          v-else-if="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          :src="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          sandbox="allow-same-origin"
+          class="preview-frame"
+          title="Vista previa final"
+        />
         <pre v-else class="payload-preview">{{ JSON.stringify(getTabPayload(activeTabKey), null, 2) }}</pre>
         <div class="dialog-actions">
           <UiButton variant="secondary" @click="isPreviewOpen = false">Cerrar</UiButton>
@@ -1299,4 +1452,20 @@ onMounted(() => {
 .preview-frame { width: 100%; height: 460px; border: 1px solid var(--color-border, #e2e8f0); border-radius: 6px; }
 .payload-preview { margin: 0; padding: 0.75rem; max-height: 360px; overflow: auto; font-size: 0.76rem; background: var(--color-bg-light, #f8fafc); border: 1px solid var(--color-border, #e2e8f0); border-radius: 6px; }
 .btn-sm { padding: 0.3rem 0.7rem; font-size: 0.8125rem; width: fit-content; }
+.tab-dirty-dot { color: #f59e0b; font-size: 0.7rem; }
+.col-action { width: 40px; text-align: center; }
+.remove-row-btn { width: 28px; height: 28px; padding: 0; border: 1px solid var(--color-border, #e2e8f0); border-radius: 4px; background: transparent; color: var(--color-text-secondary, #64748b); font-size: 1rem; line-height: 1; cursor: pointer; }
+.remove-row-btn:hover:not(:disabled) { color: var(--color-danger-strong, #dc2626); border-color: var(--color-danger, #ef4444); background: var(--color-danger-bg, #fef2f2); }
+.remove-row-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.evidence-body { display: flex; flex-direction: column; gap: 0.75rem; }
+.evidence-picker { display: flex; align-items: center; gap: 0.5rem; }
+.evidence-upload-label { display: inline-flex; align-items: center; padding: 0.45rem 0.9rem; font-size: 0.82rem; font-weight: 600; color: var(--color-primary, #1b396a); background-color: var(--color-bg-light, #f8fafc); border: 1px dashed var(--color-primary, #1b396a); border-radius: 6px; cursor: pointer; }
+.evidence-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.evidence-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.evidence-chip { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.6rem; font-size: 0.78rem; border-radius: 999px; border: 1px solid var(--color-border, #e2e8f0); background-color: var(--color-gray-100, #f1f5f9); color: var(--color-text-primary, #0f172a); }
+.evidence-chip.saved { border-color: var(--color-success, #10b981); background-color: var(--color-success-bg, #ecfdf5); }
+.chip-remove { border: none; background: transparent; color: var(--color-text-secondary, #64748b); font-size: 0.95rem; line-height: 1; cursor: pointer; padding: 0 0.1rem; }
+.chip-remove:hover { color: var(--color-danger-strong, #dc2626); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+@media (max-width: 640px) { .top-actions { width: 100%; } .top-actions :deep(button) { flex: 1 1 auto; } }
 </style>

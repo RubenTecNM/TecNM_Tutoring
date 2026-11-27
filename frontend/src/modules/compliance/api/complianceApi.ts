@@ -1,11 +1,20 @@
 import { http } from '../../../shared/api/http'
+import { shouldFallbackToLocal } from '../../../shared/api/apiFallback'
+import { isSecondTerm } from '../../../shared/utils/academicPeriod'
+import {
+  getOfficialTemplateMeta,
+  getOfficialTemplateUrl,
+  OFFICIAL_FORMAT_TEMPLATES,
+} from '../utils/templateCatalog'
 import type {
   ComplianceFilters,
   DeliverableStatus,
   DeliverableTask,
   DocenteComplianceSummary,
+  FormatComplianceOverview,
   FormatKey,
   FormatTabDefinition,
+  FormatTutorEntry,
   PaginatedResponse,
   PreviewFormat,
   TemplatePreviewResult,
@@ -148,7 +157,7 @@ function buildDefaultTasks(periodoId: number): DeliverableTask[] {
         hasTabs: fmt.hasTabs,
         tabs: fmt.tabs,
         activeTabKey: fmt.tabs?.[0]?.tabKey,
-        reportingMonth: periodoId === 2 ? fmt.monthP2 : fmt.monthP1,
+        reportingMonth: isSecondTerm(periodoId) ? fmt.monthP2 : fmt.monthP1,
         status: fmt.defaultStatus,
         delayDays: fmt.defaultDelay,
         requiresPhotoEvidence: fmt.requiresPhotoEvidence,
@@ -215,7 +224,8 @@ export const complianceApi = {
         { params: { page, limit, ...filters } },
       )
       return data
-    } catch {
+    } catch (error) {
+      if (!shouldFallbackToLocal(error)) throw error
       const periodItems = getMockTasksForPeriod(periodoId)
       let items = periodItems.filter((d) => d.docenteClave === normalizedClave)
       if (items.length === 0) {
@@ -247,7 +257,8 @@ export const complianceApi = {
         { params: { ...filters, page, limit } },
       )
       return data
-    } catch {
+    } catch (error) {
+      if (!shouldFallbackToLocal(error)) throw error
       const periodItems = getMockTasksForPeriod(filters.periodoId)
 
       let summaries: DocenteComplianceSummary[] = DOCENTES_CATALOG.map((doc) => {
@@ -296,7 +307,8 @@ export const complianceApi = {
         params: { tabKey },
       })
       return data
-    } catch {
+    } catch (error) {
+      if (!shouldFallbackToLocal(error)) throw error
       const store = loadMockStore()
       for (const key of Object.keys(store)) {
         const found = store[key].find((t) => t.id === deliverableId)
@@ -345,8 +357,7 @@ export const complianceApi = {
       )
       return data
     } catch (error: unknown) {
-      const status = (error as { response?: { status?: number } })?.response?.status
-      if (status === 409 || status === 413 || status === 415 || status === 422) {
+      if (!shouldFallbackToLocal(error)) {
         throw error
       }
       const store = loadMockStore()
@@ -372,8 +383,8 @@ export const complianceApi = {
           }
 
           if (item.requiresPhotoEvidence && payload.photoEvidenceFiles?.length) {
-            const newUrls = payload.photoEvidenceFiles.map((f) => URL.createObjectURL(f))
-            item.photoEvidenceUrls = [...(item.photoEvidenceUrls ?? []), ...newUrls]
+            const newRefs = payload.photoEvidenceFiles.map((f) => `local-evidence://${encodeURIComponent(f.name)}`)
+            item.photoEvidenceUrls = [...(item.photoEvidenceUrls ?? []), ...newRefs]
           }
 
           if (payload.submit) {
@@ -411,11 +422,124 @@ export const complianceApi = {
     }
   },
 
-  async exportDeliverableTemplate(deliverableId: string, tabKey?: string): Promise<Blob> {
-    const { data } = await http.get<Blob>(`/compliance/tasks/${deliverableId}/export`, {
-      params: { tabKey },
-      responseType: 'blob',
-    })
-    return data
+  async exportDeliverableTemplate(
+    deliverableId: string,
+    tabKey?: string,
+    formatKey?: FormatKey,
+  ): Promise<Blob> {
+    try {
+      const { data } = await http.get<Blob>(`/compliance/tasks/${deliverableId}/export`, {
+        params: { tabKey },
+        responseType: 'blob',
+      })
+      return data
+    } catch (error) {
+      if (!shouldFallbackToLocal(error)) throw error
+      const resolvedFormatKey =
+        formatKey ?? resolveFormatKeyFromId(deliverableId)
+      if (!resolvedFormatKey) throw error
+
+      const templateRes = await fetch(getOfficialTemplateUrl(resolvedFormatKey))
+      if (!templateRes.ok) throw error
+      return await templateRes.blob()
+    }
   },
+
+  async getFormatsOverview(periodoId: number): Promise<FormatComplianceOverview[]> {
+    try {
+      const { data } = await http.get<FormatComplianceOverview[]>('/compliance/formats/overview', {
+        params: { periodoId },
+      })
+      return data
+    } catch (error) {
+      if (!shouldFallbackToLocal(error)) throw error
+      const periodItems = getMockTasksForPeriod(periodoId)
+
+      return OFFICIAL_FORMAT_TEMPLATES.map((meta) => {
+        const formatTasks = periodItems.filter((t) => t.formatKey === meta.formatKey)
+        const updatedTasks = formatTasks.filter((t) => hasTaskUpdates(t))
+        const deliveredCount = formatTasks.filter(
+          (t) => t.status === 'OnTime' || t.status === 'Late',
+        ).length
+        const latestUpdateAt = updatedTasks
+          .map((t) => t.updatedAt)
+          .filter((d): d is string => Boolean(d))
+          .sort()
+          .pop()
+
+        return {
+          ...meta,
+          totalTutors: DOCENTES_CATALOG.length,
+          updatedCount: updatedTasks.length,
+          deliveredCount,
+          pendingCount: formatTasks.filter((t) => t.status === 'Pending').length,
+          latestUpdateAt,
+        }
+      })
+    }
+  },
+
+  async getFormatTutorEntries(
+    formatKey: FormatKey,
+    periodoId: number,
+  ): Promise<FormatTutorEntry[]> {
+    try {
+      const { data } = await http.get<FormatTutorEntry[]>(
+        `/compliance/formats/${formatKey}/tutors`,
+        { params: { periodoId } },
+      )
+      return data
+    } catch (error) {
+      if (!shouldFallbackToLocal(error)) throw error
+      const periodItems = getMockTasksForPeriod(periodoId)
+
+      return DOCENTES_CATALOG.map((doc) => {
+        const task = periodItems.find(
+          (t) => t.docenteClave === doc.clave && t.formatKey === formatKey,
+        )!
+        const updated = hasTaskUpdates(task)
+        return {
+          docenteClave: doc.clave,
+          docenteName: doc.name,
+          task,
+          hasUpdates: updated,
+          updatedAt: task.updatedAt,
+          updatedSummary: describeTaskUpdate(task, updated),
+        }
+      })
+    }
+  },
+}
+
+function resolveFormatKeyFromId(deliverableId: string): FormatKey | undefined {
+  return OFFICIAL_FORMAT_TEMPLATES.find((m) =>
+    deliverableId.includes(`-${m.formatKey}-`),
+  )?.formatKey
+}
+
+function hasTaskUpdates(task: DeliverableTask): boolean {
+  if (task.updatedAt || task.status !== 'Pending') return true
+  if (task.photoEvidenceUrls && task.photoEvidenceUrls.length > 0) return true
+  if (task.hasTabs && task.formPayload?.tabs && typeof task.formPayload.tabs === 'object') {
+    const tabs = task.formPayload.tabs as Record<string, Record<string, unknown>>
+    return Object.values(tabs).some((tab) => tab && Object.keys(tab).length > 2)
+  }
+  const keys = Object.keys(task.formPayload ?? {}).filter(
+    (k) => k !== 'checklist' && k !== 'observations',
+  )
+  const obs = String(task.formPayload?.observations ?? '').trim()
+  return keys.length > 0 || obs.length > 0
+}
+
+function describeTaskUpdate(task: DeliverableTask, hasUpdates: boolean): string {
+  if (!hasUpdates) return 'Sin modificaciones registradas'
+  const meta = getOfficialTemplateMeta(task.formatKey)
+  if (task.hasTabs && task.formPayload?.tabs && typeof task.formPayload.tabs === 'object') {
+    const tabs = task.formPayload.tabs as Record<string, Record<string, unknown>>
+    const savedTabs = Object.values(tabs).filter((t) => t && Object.keys(t).length > 2).length
+    return task.status === 'Pending'
+      ? `Borrador actualizado (${savedTabs}/${meta.tabsCount} hojas)`
+      : `Entregado (${savedTabs}/${meta.tabsCount} hojas)`
+  }
+  return task.status === 'Pending' ? 'Borrador con modificaciones' : 'Documento entregado'
 }

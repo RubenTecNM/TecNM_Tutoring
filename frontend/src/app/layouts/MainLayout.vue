@@ -8,9 +8,11 @@ import { useReferralNotifications } from '../../modules/referrals'
 import { UiHeader, UiShell, UiSidebar, UiToggle } from '../../shared/components'
 import type { NavigationItem } from '../../shared/components/navigation'
 import { useTheme } from '../../shared/composables/useTheme'
+import { useAcademicPeriod } from '../../shared/utils/academicPeriod'
 import { headerNavigation, mainLayoutConfig, sidebarNavigation } from './mainLayout.config'
 
 const { dark } = useTheme()
+const { currentPeriod, nextPeriod, currentStatus, isClosingSoon } = useAcademicPeriod()
 const { unreadReferralsCount, refreshUnreadCount, clearUnreadCount } = useReferralNotifications()
 const currentUser = ref<UserResponse | null>(null)
 const isAdmin = computed(() => currentUser.value?.role === 'Admin')
@@ -85,7 +87,19 @@ onMounted(async () => {
       </UiSidebar>
     </template>
 
-    <div v-if="currentUser" class="session-topbar" aria-label="Usuario activo en la sesión">
+    <div v-if="currentUser" class="session-topbar" aria-label="Periodo escolar y usuario activo">
+      <div class="period-pill" :class="{ closing: isClosingSoon }">
+        <span class="period-current">
+          Periodo actual: <strong>{{ currentPeriod.label }}</strong>
+        </span>
+        <span class="period-meta">
+          <template v-if="currentStatus.daysRemaining === 0">Último día del periodo</template>
+          <template v-else-if="currentStatus.daysRemaining === 1">Resta 1 día</template>
+          <template v-else>Restan {{ currentStatus.daysRemaining }} días</template>
+          · Próximo: {{ nextPeriod.label }}
+        </span>
+      </div>
+
       <div class="session-user-card">
         <div class="session-user-info">
           <span class="session-user-name">{{ currentUser.name }}</span>
@@ -108,8 +122,38 @@ onMounted(async () => {
 <style scoped>
 .session-topbar {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   margin-bottom: 1rem;
+}
+
+.period-pill {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.875rem;
+  background-color: var(--color-surface-white, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-left: 4px solid var(--color-primary, #1b396a);
+  border-radius: 10px;
+  box-shadow: var(--card-shadow);
+  line-height: 1.3;
+}
+
+.period-pill.closing {
+  border-left-color: var(--color-warning, #f59e0b);
+}
+
+.period-current {
+  font-size: 0.85rem;
+  color: var(--color-text-primary, #1e293b);
+}
+
+.period-meta {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary, #64748b);
 }
 
 .session-user-card {

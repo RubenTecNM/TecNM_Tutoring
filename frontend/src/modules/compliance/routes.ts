@@ -7,7 +7,7 @@ export const complianceRoutes: RouteRecordRaw[] = [
     component: () => import('./views/ComplianceView.vue'),
     meta: {
       requiresAuth: true,
-      roles: ['Docente', 'Tutor'],
+      roles: ['Admin', 'User'],
     },
   },
   {

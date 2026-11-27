@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useUnsavedChangesGuard } from '../../../shared/composables/useUnsavedChangesGuard'
 import {
   UiAlert,
   UiBadge,
@@ -12,6 +13,8 @@ import {
   UiText,
 } from '../../../shared/components'
 import { normalizeApiError } from '../../../shared/api/apiErrors'
+import { sanitizePreviewUrl } from '../../../shared/utils/safePreviewUrl'
+import { getDefaultMonthLabelForPeriodo } from '../../../shared/utils/academicPeriod'
 import { me } from '../../auth/api/authApi'
 import type { UserResponse } from '../../auth/types/auth'
 import { complianceApi } from '../api/complianceApi'
@@ -204,7 +207,7 @@ function hydrateForm(loadedTask: DeliverableTask, user: UserResponse | null): vo
   instituteName.value = saved.instituteName || String(pre.plantel ?? 'Instituto Tecnológico Superior de Monclova')
   career.value = saved.career || String(pre.carrera ?? 'Ingeniería en Sistemas Computacionales')
   semester.value = saved.semester || String(pre.semestre ?? '1er Semestre')
-  monthLabel.value = saved.monthLabel || (loadedTask.periodoId === 2 ? 'Octubre' : 'Marzo')
+  monthLabel.value = saved.monthLabel || getDefaultMonthLabelForPeriodo(loadedTask.periodoId)
   tutorName.value = saved.tutorName || String(pre.docente_nombre ?? '') || user?.name || 'Docente Tutor'
   groupName.value = saved.groupName || String(pre.grupo ?? '1°A')
   classroom.value = saved.classroom || String(pre.aula ?? 'A-102')
@@ -469,10 +472,7 @@ function goBack(): void {
   void router.push({ name: 'compliance-dashboard' })
 }
 
-onBeforeRouteLeave(() => {
-  if (!isDirty.value) return true
-  return window.confirm('Hay cambios sin guardar en el Anexo 14. ¿Deseas salir?')
-})
+useUnsavedChangesGuard(isDirty, 'Hay cambios sin guardar en el Anexo 14. ¿Deseas salir?')
 
 onMounted(() => {
   void loadAnexo14()
@@ -791,8 +791,9 @@ onMounted(() => {
         <UiAlert v-if="isPreviewing" tone="info" title="Generando vista previa..." />
 
         <iframe
-          v-else-if="previewResult?.previewUrlOrContent"
-          :src="previewResult.previewUrlOrContent"
+          v-else-if="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          :src="sanitizePreviewUrl(previewResult?.previewUrlOrContent)"
+          sandbox="allow-same-origin"
           class="preview-frame"
           title="Vista previa Anexo 14"
         />
@@ -1163,5 +1164,26 @@ onMounted(() => {
 .btn-sm {
   padding: 0.3rem 0.7rem;
   font-size: 0.8125rem;
+}
+
+:deep(input[type='number']) {
+  appearance: textfield;
+  -moz-appearance: textfield;
+  font-variant-numeric: tabular-nums;
+}
+
+:deep(input[type='number']::-webkit-inner-spin-button),
+:deep(input[type='number']::-webkit-outer-spin-button) {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .top-actions {
+    width: 100%;
+  }
+  .top-actions :deep(button) {
+    flex: 1 1 auto;
+  }
 }
 </style>
